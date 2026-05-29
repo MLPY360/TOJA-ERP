@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, PackageX } from 'lucide-react';
+import { Search, PackageX, Download } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
+import ExportOrdersModal from './ExportOrdersModal';
 
 const getStatusBadge = (status) => {
   switch (status) {
@@ -21,6 +22,7 @@ export default function OrdersView() {
   const { orders, updateOrderStatus, language } = useStore();
   const t = translations[language];
   const [searchQuery, setSearchQuery] = useState('');
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   const filtered = orders.filter((o) => {
     const q = searchQuery.toLowerCase();
@@ -41,15 +43,23 @@ export default function OrdersView() {
             {orders.length} total orders · {filtered.length} shown
           </p>
         </div>
-        <div className="relative w-full sm:w-64">
-          <Search size={15} strokeWidth={2} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder={t.searchOrdersPlaceholder}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-[13px] font-medium text-[#181E1C] placeholder:text-slate-400 outline-none transition-all focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/10"
-          />
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Search size={15} strokeWidth={2} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder={t.searchOrdersPlaceholder}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-[13px] font-medium text-[#181E1C] placeholder:text-slate-400 outline-none transition-all focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/10"
+            />
+          </div>
+          <button
+            onClick={() => setIsExportModalOpen(true)}
+            className="flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 whitespace-nowrap"
+          >
+            <Download size={16} strokeWidth={2.5} /> <span className="hidden sm:inline">{t.exportData || 'Export Data'}</span>
+          </button>
         </div>
       </div>
 
@@ -141,6 +151,7 @@ export default function OrdersView() {
           </tbody>
         </table>
       </div>
+      <ExportOrdersModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} />
     </div>
   );
 }

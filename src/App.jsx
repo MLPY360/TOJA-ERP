@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Download, ClipboardList, LogOut, Package, BarChart3, LayoutDashboard, Menu, Globe } from 'lucide-react';
+import { Plus, Download, ClipboardList, LogOut, Package, BarChart3, LayoutDashboard, Menu, Globe, Wallet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useStore } from './store/useStore';
 import { translations } from './translations';
@@ -12,6 +12,7 @@ import InventoryTable from './components/InventoryTable';
 import AddProductModal from './components/AddProductModal';
 import OrdersView from './components/OrdersView';
 import AddOrderModal from './components/AddOrderModal';
+import FinanceView from './components/FinanceView';
 
 function formatEGP(amount) {
   return amount.toLocaleString('en-EG') + ' EGP';
@@ -20,7 +21,7 @@ function formatEGP(amount) {
 const getSum = (obj) => Object.values(obj || {}).reduce((a, b) => a + b, 0);
 
 export default function App() {
-  const { currentUser, logout, products, orders, language, toggleLanguage, initializeListeners } = useStore();
+  const { currentUser, logout, products, orders, expenses, language, toggleLanguage, initializeListeners } = useStore();
   const t = translations[language];
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function App() {
     let cashWithShipping = 0;
     let cashInTreasury = 0;
     let returnLosses = 0;
+    let totalExpensesSum = 0;
 
     products.forEach(p => {
       const pInitial = getSum(p.initialStock);
@@ -76,11 +78,16 @@ export default function App() {
       }
     });
 
+    expenses.forEach(exp => {
+      totalExpensesSum += Number(exp.amount) || 0;
+    });
+
     totalProfit -= returnLosses;
+    totalProfit -= totalExpensesSum;
 
     const avgMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0;
-    return { totalInStock, totalSoldUnits, totalRevenue, totalProfit, cashWithShipping, cashInTreasury, returnLosses, avgMargin };
-  }, [products, orders]);
+    return { totalInStock, totalSoldUnits, totalRevenue, totalProfit, cashWithShipping, cashInTreasury, returnLosses, avgMargin, totalExpensesSum };
+  }, [products, orders, expenses]);
 
   const handleEdit = (product) => {
     setEditProduct(product);
@@ -183,10 +190,10 @@ export default function App() {
               <Package size={18} strokeWidth={2} /> {t.orders}
             </div>
             <div 
-              onClick={() => alert(t.comingSoon)}
-              className="px-4 py-3 text-white/50 hover:text-white/80 hover:bg-white/5 rounded-xl flex items-center gap-3 text-sm font-medium cursor-pointer transition-colors"
+              onClick={() => setActiveTab('finance')}
+              className={`px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-semibold cursor-pointer transition-colors ${activeTab === 'finance' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
             >
-              <BarChart3 size={18} strokeWidth={2} /> {t.analytics}
+              <Wallet size={18} strokeWidth={2} /> {t.finance || 'Finance'}
             </div>
           </nav>
         </div>
@@ -216,10 +223,10 @@ export default function App() {
               </button>
               <div>
                 <h1 className="text-3xl font-extrabold text-[#181E1C] tracking-tight">
-                  {activeTab === 'dashboard' ? t.dashboard : t.orders}
+                  {activeTab === 'dashboard' ? t.dashboard : activeTab === 'orders' ? t.orders : t.finance || 'Finance'}
                 </h1>
                 <p className="text-sm text-slate-500 mt-1 font-medium">
-                  {activeTab === 'dashboard' ? t.overview : t.manageOrders}
+                  {activeTab === 'dashboard' ? t.overview : activeTab === 'orders' ? t.manageOrders : t.expenseTracker || 'Expense Tracker'}
                 </p>
               </div>
             </div>
@@ -282,8 +289,10 @@ export default function App() {
 
               <InventoryTable onEdit={handleEdit} />
             </>
-          ) : (
+          ) : activeTab === 'orders' ? (
             <OrdersView />
+          ) : (
+            <FinanceView />
           )}
           
         </div>

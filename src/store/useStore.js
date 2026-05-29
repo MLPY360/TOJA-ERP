@@ -32,6 +32,7 @@ export const useStore = create((set, get) => ({
   products: [],
   activityLogs: [],
   orders: [],
+  expenses: [],
   currentUser: (() => {
     try {
       const raw = localStorage.getItem('toja_user');
@@ -80,6 +81,11 @@ export const useStore = create((set, get) => ({
     onSnapshot(query(collection(db, "activityLogs"), orderBy("timestamp", "desc")), (snapshot) => {
       const activityLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       set({ activityLogs });
+    });
+
+    onSnapshot(query(collection(db, "expenses"), orderBy("date", "desc")), (snapshot) => {
+      const expenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      set({ expenses });
     });
 
     set({ listenersInitialized: true });
@@ -248,6 +254,30 @@ export const useStore = create((set, get) => ({
     }
 
     get().logActivity(`Updated order ${order.displayId || orderId} status to ${newStatus}`);
+  },
+
+  addExpense: async (expenseData) => {
+    try {
+      await addDoc(collection(db, "expenses"), {
+        ...expenseData,
+        createdAt: new Date().toISOString()
+      });
+      get().logActivity(`Added expense: ${expenseData.category} - ${expenseData.amount}`);
+    } catch (error) {
+      console.error("Failed to add expense:", error);
+    }
+  },
+
+  deleteExpense: async (id) => {
+    try {
+      const expense = get().expenses.find(e => e.id === id);
+      await deleteDoc(doc(db, "expenses", id));
+      if (expense) {
+        get().logActivity(`Deleted expense: ${expense.category} - ${expense.amount}`);
+      }
+    } catch (error) {
+      console.error("Failed to delete expense:", error);
+    }
   }
 }))
 
