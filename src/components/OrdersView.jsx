@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, PackageX, Download } from 'lucide-react';
+import { Search, PackageX, Download, MessageCircle } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
 import ExportOrdersModal from './ExportOrdersModal';
@@ -23,6 +23,33 @@ export default function OrdersView() {
   const t = translations[language];
   const [searchQuery, setSearchQuery] = useState('');
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
+  const formatWhatsAppNumber = (phone) => {
+    let cleaned = phone.replace(/\D/g, '');
+    if (cleaned.startsWith('01')) {
+      cleaned = '20' + cleaned.substring(1);
+    }
+    return cleaned;
+  };
+
+  const handleStatusChange = (order, newStatus) => {
+    updateOrderStatus(order.id, newStatus);
+    
+    if (newStatus === 'Shipped') {
+      const formattedPhone = formatWhatsAppNumber(order.phone);
+      const displayId = order.displayId || order.id;
+      const shortId = displayId.length > 10 ? displayId.substring(displayId.length - 4) : displayId;
+      
+      const message = `أهلاً يا ${order.customerName} 👋
+أوردرك من TOJA طلع مع شركة الشحن وهو في الطريق ليك دلوقتي! 🚚
+رقم الأوردر: ${shortId}
+إجمالي الحساب: ${order.total} جنيه
+لو في أي استفسار إحنا دايماً معاك.`;
+
+      const encodedMessage = encodeURIComponent(message);
+      window.open(`https://wa.me/${formattedPhone}?text=${encodedMessage}`, '_blank');
+    }
+  };
 
   const filtered = orders.filter((o) => {
     const q = searchQuery.toLowerCase();
@@ -104,7 +131,19 @@ export default function OrdersView() {
                   
                   <td className="p-4 align-middle text-start">
                     <p className="font-bold text-[#181E1C]">{order.customerName}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{order.phone}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p className="text-[11px] text-slate-500">{order.phone}</p>
+                      <button
+                        onClick={() => {
+                          const formattedPhone = formatWhatsAppNumber(order.phone);
+                          window.open(`https://wa.me/${formattedPhone}`, '_blank');
+                        }}
+                        className="text-emerald-500 hover:text-emerald-600 transition-colors"
+                        title="Chat on WhatsApp"
+                      >
+                        <MessageCircle size={14} />
+                      </button>
+                    </div>
                   </td>
                   
                   <td className="p-4 align-middle text-start">
@@ -126,7 +165,7 @@ export default function OrdersView() {
                   <td className="p-4 align-middle text-center">
                     <select
                       value={order.status}
-                      onChange={(e) => updateOrderStatus(order.id, e.target.value)}
+                      onChange={(e) => handleStatusChange(order, e.target.value)}
                       className={`text-xs font-bold px-3 py-1.5 rounded-full border outline-none cursor-pointer appearance-none text-center ${getStatusBadge(order.status)}`}
                       style={{ textAlignLast: 'center' }}
                     >
