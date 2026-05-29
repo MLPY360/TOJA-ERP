@@ -8,6 +8,7 @@ import LoginModal from './components/LoginModal';
 import ActivityLogs from './components/ActivityLogs';
 import DashboardCard from './components/DashboardCard';
 import ProfitChart from './components/ProfitChart';
+import BreakEvenCard from './components/BreakEvenCard';
 import InventoryTable from './components/InventoryTable';
 import AddProductModal from './components/AddProductModal';
 import OrdersView from './components/OrdersView';
@@ -42,6 +43,8 @@ export default function App() {
     let cashInTreasury = 0;
     let returnLosses = 0;
     let totalExpensesSum = 0;
+    let deliveredItemsSold = 0;
+    let sumProfitMargin = 0;
 
     products.forEach(p => {
       const pInitial = getSum(p.initialStock);
@@ -49,6 +52,7 @@ export default function App() {
       
       totalInStock += (pInitial - pSold);
       totalSoldUnits += pSold;
+      sumProfitMargin += (p.sellingPrice - p.costPrice);
     });
 
     orders.forEach(order => {
@@ -62,6 +66,7 @@ export default function App() {
             orderCost += product.costPrice * item.qty;
             itemsRevenue += product.sellingPrice * item.qty;
           }
+          deliveredItemsSold += item.qty;
         });
         
         totalRevenue += itemsRevenue;
@@ -85,7 +90,10 @@ export default function App() {
     totalProfit -= totalExpensesSum;
 
     const avgMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0;
-    return { totalInStock, totalSoldUnits, totalRevenue, totalProfit, cashWithShipping, cashInTreasury, returnLosses, avgMargin, totalExpensesSum };
+    const avgProfitMarginPerItem = products.length > 0 ? (sumProfitMargin / products.length) : 0;
+    const breakEvenPoint = avgProfitMarginPerItem > 0 ? Math.ceil(totalExpensesSum / avgProfitMarginPerItem) : 0;
+
+    return { totalInStock, totalSoldUnits, totalRevenue, totalProfit, cashWithShipping, cashInTreasury, returnLosses, avgMargin, totalExpensesSum, deliveredItemsSold, breakEvenPoint };
   }, [products, orders, expenses]);
 
   const handleEdit = (product) => {
@@ -270,8 +278,13 @@ export default function App() {
                  <DashboardCard title={t.returnLosses} value={formatEGP(metrics.returnLosses)} icon="alert" index={6} />
               </div>
 
-              <div className="mb-8">
-                <ProfitChart products={products} />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                <div className="lg:col-span-2">
+                  <ProfitChart products={products} />
+                </div>
+                <div className="lg:col-span-1">
+                  <BreakEvenCard breakEvenPoint={metrics.breakEvenPoint} deliveredItemsSold={metrics.deliveredItemsSold} />
+                </div>
               </div>
 
               <InventoryTable onEdit={handleEdit} />

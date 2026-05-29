@@ -102,7 +102,12 @@ export const translations = {
     newWithdrawal: "New Withdrawal",
     partnerSummary: "Partner Summary",
     settlementReport: "Settlement Report",
-    payout: "Payout"
+    payout: "Payout",
+    breakEvenAnalysis: "Break-even Analysis",
+    itemsNeededBreakEven: "Items needed to break even",
+    itemsSold: "Items Sold",
+    targetAchieved: "Target Achieved! You are now making pure profit.",
+    remainingToBreakEven: "Remaining to break even"
   },
   ar: {
     dashboard: "لوحة القيادة",
@@ -207,6 +212,11 @@ export const translations = {
     newWithdrawal: "سحب جديد",
     partnerSummary: "ملخص الشريك",
     settlementReport: "كشف حساب وتسوية",
-    payout: "المستحق دفعه"
+    payout: "المستحق دفعه",
+    breakEvenAnalysis: "نقطة التعادل",
+    itemsNeededBreakEven: "قطعة مطلوبة للتعادل",
+    itemsSold: "تم بيع",
+    targetAchieved: "تم تحقيق الهدف! أنت الآن تحقق أرباحاً صافية.",
+    remainingToBreakEven: "متبقي للتعادل"
   }
 };
