@@ -33,6 +33,8 @@ export const useStore = create((set, get) => ({
   activityLogs: [],
   orders: [],
   expenses: [],
+  partners: [],
+  withdrawals: [],
   currentUser: (() => {
     try {
       const raw = localStorage.getItem('toja_user');
@@ -86,6 +88,16 @@ export const useStore = create((set, get) => ({
     onSnapshot(query(collection(db, "expenses"), orderBy("date", "desc")), (snapshot) => {
       const expenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       set({ expenses });
+    });
+
+    onSnapshot(collection(db, "partners"), (snapshot) => {
+      const partners = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      set({ partners });
+    });
+
+    onSnapshot(query(collection(db, "withdrawals"), orderBy("date", "desc")), (snapshot) => {
+      const withdrawals = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      set({ withdrawals });
     });
 
     set({ listenersInitialized: true });
@@ -277,6 +289,61 @@ export const useStore = create((set, get) => ({
       }
     } catch (error) {
       console.error("Failed to delete expense:", error);
+    }
+  },
+
+  addPartner: async (partnerData) => {
+    try {
+      await addDoc(collection(db, "partners"), {
+        ...partnerData,
+        createdAt: new Date().toISOString()
+      });
+      get().logActivity(`Added partner: ${partnerData.name}`);
+    } catch (error) {
+      console.error("Failed to add partner:", error);
+    }
+  },
+
+  updatePartner: async (id, data) => {
+    try {
+      const partnerRef = doc(db, "partners", id);
+      await updateDoc(partnerRef, data);
+      get().logActivity(`Updated partner details`);
+    } catch (error) {
+      console.error("Failed to update partner:", error);
+    }
+  },
+
+  deletePartner: async (id) => {
+    try {
+      const partner = get().partners.find(p => p.id === id);
+      await deleteDoc(doc(db, "partners", id));
+      if (partner) {
+        get().logActivity(`Deleted partner: ${partner.name}`);
+      }
+    } catch (error) {
+      console.error("Failed to delete partner:", error);
+    }
+  },
+
+  addWithdrawal: async (withdrawalData) => {
+    try {
+      await addDoc(collection(db, "withdrawals"), {
+        ...withdrawalData,
+        createdAt: new Date().toISOString()
+      });
+      get().logActivity(`Added withdrawal of ${withdrawalData.amount}`);
+    } catch (error) {
+      console.error("Failed to add withdrawal:", error);
+    }
+  },
+
+  deleteWithdrawal: async (id) => {
+    try {
+      await deleteDoc(doc(db, "withdrawals", id));
+      get().logActivity(`Deleted withdrawal record`);
+    } catch (error) {
+      console.error("Failed to delete withdrawal:", error);
     }
   }
 }))

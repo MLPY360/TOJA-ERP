@@ -93,7 +93,16 @@ export const translations = {
     endDate: "End Date",
     allProducts: "All Products",
     export: "Export",
-    close: "Close"
+    close: "Close",
+    partnersLedger: "Partners Ledger",
+    withdrawals: "Withdrawals",
+    profitShare: "Profit Share",
+    netBalance: "Net Balance",
+    generateSettlementReport: "Generate Settlement Report",
+    newWithdrawal: "New Withdrawal",
+    partnerSummary: "Partner Summary",
+    settlementReport: "Settlement Report",
+    payout: "Payout"
   },
   ar: {
     dashboard: "لوحة القيادة",
@@ -189,6 +198,15 @@ export const translations = {
     endDate: "تاريخ الانتهاء",
     allProducts: "جميع المنتجات",
     export: "تصدير",
-    close: "إغلاق"
+    close: "إغلاق",
+    partnersLedger: "حسابات الشركاء",
+    withdrawals: "المسحوبات",
+    profitShare: "نسبة الأرباح",
+    netBalance: "صافي الرصيد",
+    generateSettlementReport: "استخراج كشف حساب",
+    newWithdrawal: "سحب جديد",
+    partnerSummary: "ملخص الشريك",
+    settlementReport: "كشف حساب وتسوية",
+    payout: "المستحق دفعه"
   }
 };
