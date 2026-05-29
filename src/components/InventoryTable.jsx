@@ -54,7 +54,8 @@ export default function InventoryTable({ onEdit }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto w-full">
+      {/* Desktop Table */}
+      <div className="hidden md:block overflow-x-auto w-full">
         <table className="w-full text-start border-collapse whitespace-nowrap">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-500 font-bold">
@@ -191,6 +192,56 @@ export default function InventoryTable({ onEdit }) {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Cards */}
+      <div className="md:hidden flex flex-col p-4 gap-4 bg-slate-50 border-t border-slate-100">
+        {filtered.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-2xl shadow-sm border border-slate-100">
+            <div className="flex flex-col items-center gap-3">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+                <PackageX size={24} className="text-slate-400" />
+              </div>
+              <p className="text-[13px] font-semibold text-slate-500">{t.noProducts}</p>
+            </div>
+          </div>
+        ) : (
+          filtered.map((product) => {
+            const totalInitial = getSum(product.initialStock);
+            const totalSold = getSum(product.sold);
+            const currentStock = totalInitial - totalSold;
+            return (
+              <div key={product.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col gap-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold text-[#181E1C]">{product.name}</h3>
+                    <p className="text-xs text-slate-400 font-medium uppercase mt-0.5">{product.sku}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {onEdit && (
+                      <button onClick={() => onEdit(product)} className="p-2.5 text-slate-400 hover:text-[#597867] bg-slate-50 rounded-xl transition-colors">
+                        <Pencil size={16} />
+                      </button>
+                    )}
+                    <button onClick={() => handleDelete(product.id)} className={`p-2.5 rounded-xl transition-colors ${deleteConfirmId === product.id ? 'bg-red-500 text-white' : 'text-slate-400 hover:text-red-500 bg-slate-50'}`}>
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <p className="text-[10px] uppercase font-bold text-slate-500 mb-1 tracking-wider">{t.totalInStock}</p>
+                    <p className="font-black text-[#181E1C] text-lg">{currentStock}</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <p className="text-[10px] uppercase font-bold text-slate-500 mb-1 tracking-wider">{t.price}</p>
+                    <p className="font-bold text-[#597867] text-sm mt-1">{formatEGP(product.sellingPrice)}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

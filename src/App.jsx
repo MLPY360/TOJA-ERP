@@ -31,7 +31,6 @@ export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [editProduct, setEditProduct] = useState(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
 
   const metrics = useMemo(() => {
@@ -158,14 +157,8 @@ export default function App() {
         </div>
 
         {/* Glassmorphism Wrapper */}
-        <div className="relative z-10 flex h-full w-full bg-white/40 backdrop-blur-2xl">
-          {isSidebarOpen && (
-            <div 
-              className="fixed inset-0 bg-black/50 z-40 md:hidden"
-              onClick={() => setIsSidebarOpen(false)}
-            />
-          )}
-          <aside className={`absolute inset-y-0 left-0 z-50 transform ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"} md:relative md:translate-x-0 transition duration-200 ease-in-out bg-[#181E1C] w-64 text-white flex-shrink-0 flex flex-col justify-between`}>
+        <div className="relative z-10 flex h-full w-full bg-white/40 backdrop-blur-2xl pb-[72px] md:pb-0">
+          <aside className="hidden md:flex relative transition duration-200 ease-in-out bg-[#181E1C] w-64 text-white flex-shrink-0 flex-col justify-between z-50">
         <div>
           <div className="flex items-center gap-3.5 px-6 py-8">
             <img src="/logo.png" alt="TOJA" className="h-8 w-auto object-contain invert brightness-0" />
@@ -211,16 +204,10 @@ export default function App() {
       </aside>
 
       <main className="flex-1 h-full overflow-y-auto">
-        <div className="min-h-full p-8 md:p-12">
+        <div className="min-h-full p-4 sm:p-8 md:p-12 pb-24 md:pb-12">
           
           <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
             <div className="flex items-center gap-4">
-              <button 
-                onClick={() => setIsSidebarOpen(true)}
-                className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                <Menu size={24} />
-              </button>
               <div>
                 <h1 className="text-3xl font-extrabold text-[#181E1C] tracking-tight">
                   {activeTab === 'dashboard' ? t.dashboard : activeTab === 'orders' ? t.orders : t.finance || 'Finance'}
@@ -297,6 +284,39 @@ export default function App() {
           
         </div>
       </main>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <nav className="md:hidden fixed bottom-0 left-0 w-full bg-[#181E1C] border-t border-white/10 z-50 flex items-center justify-around pb-safe">
+        <div 
+          onClick={() => setActiveTab('dashboard')}
+          className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 cursor-pointer transition-colors ${activeTab === 'dashboard' ? 'text-white' : 'text-white/50 hover:text-white/80'}`}
+        >
+          <LayoutDashboard size={20} strokeWidth={2.5} />
+          <span className="text-[10px] font-bold">{t.dashboard}</span>
+        </div>
+        <div 
+          onClick={() => setActiveTab('orders')}
+          className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 cursor-pointer transition-colors ${activeTab === 'orders' ? 'text-white' : 'text-white/50 hover:text-white/80'}`}
+        >
+          <Package size={20} strokeWidth={2.5} />
+          <span className="text-[10px] font-bold">{t.orders}</span>
+        </div>
+        <div 
+          onClick={() => setActiveTab('finance')}
+          className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 cursor-pointer transition-colors ${activeTab === 'finance' ? 'text-white' : 'text-white/50 hover:text-white/80'}`}
+        >
+          <Wallet size={20} strokeWidth={2.5} />
+          <span className="text-[10px] font-bold">{t.finance || 'Finance'}</span>
+        </div>
+        <div 
+          onClick={logout}
+          className="flex-1 flex flex-col items-center justify-center py-3 gap-1 cursor-pointer transition-colors text-red-400 hover:text-red-300"
+        >
+          <LogOut size={20} strokeWidth={2.5} />
+          <span className="text-[10px] font-bold">{t.logout}</span>
+        </div>
+      </nav>
+
       </div>
 
       {showLogs && <ActivityLogs onClose={() => setShowLogs(false)} />}

@@ -100,7 +100,7 @@ export default function ExportOrdersModal({ isOpen, onClose }) {
           </div>
 
           <div className="p-6 flex flex-col gap-5">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-start">{t.startDate || 'Start Date'}</label>
                 <div className="relative">

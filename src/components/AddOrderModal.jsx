@@ -129,30 +129,32 @@ export default function AddOrderModal({ isOpen, onClose }) {
 
                 <div className="flex flex-col gap-3">
                   {items.map((item, index) => (
-                    <div key={index} className="flex gap-2 items-end p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <div className="flex-1">
+                    <div key={index} className="flex flex-col sm:flex-row gap-3 sm:items-end p-4 sm:p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <div className="flex-1 w-full">
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-start">{t.product}</label>
                         <select required value={item.productId} onChange={e => updateItem(index, 'productId', e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start">
                           <option value="" disabled>Select Product</option>
                           {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
                         </select>
                       </div>
-                      <div className="w-24">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-start">{t.size}</label>
-                        <select value={item.size} onChange={e => updateItem(index, 'size', e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start">
-                          <option value="M">M</option>
-                          <option value="L">L</option>
-                          <option value="XL">XL</option>
-                          <option value="XXL">XXL</option>
-                        </select>
+                      <div className="flex items-end gap-3 w-full sm:w-auto">
+                        <div className="flex-1 sm:w-24">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-start">{t.size}</label>
+                          <select value={item.size} onChange={e => updateItem(index, 'size', e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start">
+                            <option value="M">M</option>
+                            <option value="L">L</option>
+                            <option value="XL">XL</option>
+                            <option value="XXL">XXL</option>
+                          </select>
+                        </div>
+                        <div className="flex-1 sm:w-20">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-start">{t.qty}</label>
+                          <input type="number" min="1" value={item.qty} onChange={e => updateItem(index, 'qty', e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start" />
+                        </div>
+                        <button type="button" onClick={() => removeItem(index)} disabled={items.length === 1} className="h-10 px-3 text-slate-400 hover:text-red-500 disabled:opacity-30 transition-colors">
+                          <Trash2 size={16} />
+                        </button>
                       </div>
-                      <div className="w-20">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-start">{t.qty}</label>
-                        <input type="number" min="1" value={item.qty} onChange={e => updateItem(index, 'qty', e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start" />
-                      </div>
-                      <button type="button" onClick={() => removeItem(index)} disabled={items.length === 1} className="h-10 px-3 text-slate-400 hover:text-red-500 disabled:opacity-30 transition-colors">
-                        <Trash2 size={16} />
-                      </button>
                     </div>
                   ))}
                 </div>

@@ -90,7 +90,8 @@ export default function OrdersView() {
         </div>
       </div>
 
-      <div className="overflow-x-auto w-full">
+      {/* Desktop Table */}
+      <div className="hidden md:block overflow-x-auto w-full">
         <table className="w-full text-start border-collapse whitespace-nowrap">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-500 font-bold">
@@ -189,6 +190,74 @@ export default function OrdersView() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Cards */}
+      <div className="md:hidden flex flex-col p-4 gap-4 bg-slate-50 border-t border-slate-100">
+        {filtered.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-2xl shadow-sm border border-slate-100">
+            <div className="flex flex-col items-center gap-3">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+                <PackageX size={24} className="text-slate-400" />
+              </div>
+              <p className="text-[13px] font-semibold text-slate-500">{t.noOrders}</p>
+            </div>
+          </div>
+        ) : (
+          filtered.map((order) => {
+            const displayId = order.displayId || order.id;
+            const itemsCount = order.items?.reduce((sum, item) => sum + item.qty, 0) || 0;
+            return (
+              <div key={order.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col gap-4">
+                <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="font-extrabold text-[#181E1C]">{displayId}</h3>
+                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">{new Date(order.createdAt).toLocaleDateString()} · {itemsCount} items</p>
+                  </div>
+                  <div className="text-end">
+                    <p className="font-black text-[#597867]">{order.total.toLocaleString('en-EG')} EGP</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{t.incShipping} {order.shippingFee} EGP</p>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <p className="font-bold text-[#181E1C]">{order.customerName}</p>
+                    <button
+                      onClick={() => {
+                        const formattedPhone = formatWhatsAppNumber(order.phone);
+                        window.open(`https://wa.me/${formattedPhone}`, '_blank');
+                      }}
+                      className="text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-colors"
+                    >
+                      <MessageCircle size={14} /> <span className="text-[11px] font-bold">{order.phone}</span>
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium">{order.governorate} - {order.address}</p>
+                </div>
+
+                <div className="pt-2">
+                  <select
+                    value={order.status}
+                    onChange={(e) => handleStatusChange(order, e.target.value)}
+                    className={`w-full h-11 text-sm font-bold px-4 rounded-xl border outline-none appearance-none text-center ${getStatusBadge(order.status)}`}
+                    style={{ textAlignLast: 'center' }}
+                  >
+                    <option value="Pending" className="text-slate-700 bg-white">{t.pending}</option>
+                    <option value="Shipped" className="text-slate-700 bg-white">{t.shipped}</option>
+                    {order.status === 'Delivered' && (
+                      <option value="Delivered" className="text-slate-700 bg-white">{t.delivered}</option>
+                    )}
+                    <option value="Delivered - Pending Cash" className="text-slate-700 bg-white">{t.deliveredPendingCash}</option>
+                    <option value="Delivered - Collected" className="text-slate-700 bg-white">{t.deliveredCollected}</option>
+                    <option value="Returned" className="text-slate-700 bg-white">{t.returned}</option>
+                    <option value="Cancelled" className="text-slate-700 bg-white">{t.cancelled}</option>
+                  </select>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
       <ExportOrdersModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} />
     </div>

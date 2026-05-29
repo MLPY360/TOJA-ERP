@@ -179,8 +179,9 @@ export default function FinanceView() {
           </div>
         )}
 
-        <div className="overflow-x-auto w-full">
-          <table className="w-full text-start border-collapse whitespace-nowrap">
+      {/* Desktop Table */}
+      <div className="hidden md:block overflow-x-auto w-full">
+        <table className="w-full text-start border-collapse whitespace-nowrap">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-500 font-bold">
                 <th className="p-4 px-6 font-semibold text-start">{t.date || 'Date'}</th>
@@ -239,6 +240,45 @@ export default function FinanceView() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Cards */}
+        <div className="md:hidden flex flex-col p-4 gap-4 bg-slate-50 border-t border-slate-100">
+          {filteredExpenses.length === 0 ? (
+            <div className="p-8 text-center bg-white rounded-2xl shadow-sm border border-slate-100">
+              <div className="flex flex-col items-center gap-3">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+                  <Wallet size={24} className="text-slate-400" />
+                </div>
+                <p className="text-[13px] font-semibold text-slate-500">No expenses found</p>
+              </div>
+            </div>
+          ) : (
+            filteredExpenses.map((exp) => (
+              <div key={exp.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col gap-3">
+                <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="font-extrabold text-[#181E1C]">{exp.date}</h3>
+                    <span className="inline-flex mt-1 items-center justify-center px-2 py-1 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">
+                      {getCategoryTranslation(exp.category)}
+                    </span>
+                  </div>
+                  <div className="text-end">
+                    <p className="font-black text-red-500">{Number(exp.amount).toLocaleString('en-EG')} EGP</p>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center">
+                  <p className="font-semibold text-slate-700 text-sm">{exp.description}</p>
+                  <button
+                    onClick={() => deleteExpense(exp.id)}
+                    className="p-2.5 text-slate-400 hover:text-red-500 bg-slate-50 rounded-xl transition-colors"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
