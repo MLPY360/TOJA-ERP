@@ -1,12 +1,15 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Package, ShoppingCart, DollarSign, TrendingUp } from 'lucide-react';
+import { Package, ShoppingCart, DollarSign, TrendingUp, Truck, Wallet, AlertTriangle } from 'lucide-react';
 
 const icons = {
   box: Package,
   cart: ShoppingCart,
   dollar: DollarSign,
-  chart: TrendingUp
+  chart: TrendingUp,
+  truck: Truck,
+  wallet: Wallet,
+  alert: AlertTriangle
 };
 
 export default function DashboardCard({ title, value, icon, index }) {

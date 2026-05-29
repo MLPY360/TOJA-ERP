@@ -220,7 +220,10 @@ export const useStore = create((set, get) => ({
     const orderRef = doc(db, "orders", orderId);
     await updateDoc(orderRef, { status: newStatus });
 
-    if (order.status === 'Cancelled' && newStatus !== 'Cancelled') {
+    const isOldRestockingStatus = order.status === 'Cancelled' || order.status === 'Returned';
+    const isNewRestockingStatus = newStatus === 'Cancelled' || newStatus === 'Returned';
+
+    if (isOldRestockingStatus && !isNewRestockingStatus) {
       for (const item of order.items) {
         const productRef = doc(db, "products", item.productId);
         const productSnap = await getDoc(productRef);
@@ -231,7 +234,7 @@ export const useStore = create((set, get) => ({
           await updateDoc(productRef, { sold: newSold });
         }
       }
-    } else if (order.status !== 'Cancelled' && newStatus === 'Cancelled') {
+    } else if (!isOldRestockingStatus && isNewRestockingStatus) {
       for (const item of order.items) {
         const productRef = doc(db, "products", item.productId);
         const productSnap = await getDoc(productRef);

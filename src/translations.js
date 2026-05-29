@@ -69,7 +69,13 @@ export const translations = {
     systemAuditLogs: "System Audit Logs",
     trackInventoryChanges: "Track all inventory changes",
     revenueProfitByProduct: "Revenue & Profit by Product",
-    performanceAcrossInventory: "Performance across active inventory"
+    performanceAcrossInventory: "Performance across active inventory",
+    cashWithShipping: "Cash with Shipping",
+    cashInTreasury: "Cash in Treasury",
+    returnLosses: "Return Losses",
+    deliveredPendingCash: "Delivered - Pending Cash",
+    deliveredCollected: "Delivered - Collected",
+    returned: "Returned"
   },
   ar: {
     dashboard: "لوحة القيادة",
@@ -141,6 +147,12 @@ export const translations = {
     systemAuditLogs: "سجل نشاط النظام",
     trackInventoryChanges: "تتبع جميع حركات المخزون",
     revenueProfitByProduct: "الإيرادات والأرباح حسب المنتج",
-    performanceAcrossInventory: "الأداء عبر المخزون النشط"
+    performanceAcrossInventory: "الأداء عبر المخزون النشط",
+    cashWithShipping: "نقدية لدى شركة الشحن",
+    cashInTreasury: "نقدية بالخزينة",
+    returnLosses: "خسائر المرتجعات",
+    deliveredPendingCash: "تم التوصيل - في انتظار التحصيل",
+    deliveredCollected: "تم التوصيل - تم التحصيل",
+    returned: "مرتجع"
   }
 };

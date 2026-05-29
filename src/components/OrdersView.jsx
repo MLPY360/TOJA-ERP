@@ -8,7 +8,10 @@ const getStatusBadge = (status) => {
   switch (status) {
     case 'Pending': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
     case 'Shipped': return 'bg-blue-100 text-blue-700 border-blue-200';
+    case 'Delivered - Pending Cash': return 'bg-orange-100 text-orange-700 border-orange-200';
+    case 'Delivered - Collected': return 'bg-green-100 text-green-700 border-green-200';
     case 'Delivered': return 'bg-green-100 text-green-700 border-green-200';
+    case 'Returned': return 'bg-slate-200 text-slate-700 border-slate-300';
     case 'Cancelled': return 'bg-red-100 text-red-700 border-red-200';
     default: return 'bg-slate-100 text-slate-700 border-slate-200';
   }
@@ -119,7 +122,12 @@ export default function OrdersView() {
                     >
                       <option value="Pending" className="text-slate-700 bg-white">{t.pending}</option>
                       <option value="Shipped" className="text-slate-700 bg-white">{t.shipped}</option>
-                      <option value="Delivered" className="text-slate-700 bg-white">{t.delivered}</option>
+                      {order.status === 'Delivered' && (
+                        <option value="Delivered" className="text-slate-700 bg-white">{t.delivered}</option>
+                      )}
+                      <option value="Delivered - Pending Cash" className="text-slate-700 bg-white">{t.deliveredPendingCash}</option>
+                      <option value="Delivered - Collected" className="text-slate-700 bg-white">{t.deliveredCollected}</option>
+                      <option value="Returned" className="text-slate-700 bg-white">{t.returned}</option>
                       <option value="Cancelled" className="text-slate-700 bg-white">{t.cancelled}</option>
                     </select>
                   </td>

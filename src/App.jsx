@@ -20,7 +20,7 @@ function formatEGP(amount) {
 const getSum = (obj) => Object.values(obj || {}).reduce((a, b) => a + b, 0);
 
 export default function App() {
-  const { currentUser, logout, products, language, toggleLanguage, initializeListeners } = useStore();
+  const { currentUser, logout, products, orders, language, toggleLanguage, initializeListeners } = useStore();
   const t = translations[language];
 
   useEffect(() => {
@@ -35,25 +35,52 @@ export default function App() {
 
   const metrics = useMemo(() => {
     let totalInStock = 0;
-    let totalSold = 0;
+    let totalSoldUnits = 0;
     let totalRevenue = 0;
     let totalProfit = 0;
-    let totalCost = 0;
+    let cashWithShipping = 0;
+    let cashInTreasury = 0;
+    let returnLosses = 0;
 
     products.forEach(p => {
       const pInitial = getSum(p.initialStock);
       const pSold = getSum(p.sold);
       
       totalInStock += (pInitial - pSold);
-      totalSold += pSold;
-      totalRevenue += pSold * p.sellingPrice;
-      totalCost += pSold * p.costPrice;
-      totalProfit += pSold * (p.sellingPrice - p.costPrice);
+      totalSoldUnits += pSold;
     });
 
+    orders.forEach(order => {
+      if (order.status === 'Delivered - Collected' || order.status === 'Delivered - Pending Cash' || order.status === 'Delivered') {
+        let orderCost = 0;
+        let itemsRevenue = 0;
+        
+        order.items?.forEach(item => {
+          const product = products.find(p => p.id === item.productId);
+          if (product) {
+            orderCost += product.costPrice * item.qty;
+            itemsRevenue += product.sellingPrice * item.qty;
+          }
+        });
+        
+        totalRevenue += itemsRevenue;
+        totalProfit += (itemsRevenue - orderCost);
+        
+        if (order.status === 'Delivered - Pending Cash') {
+          cashWithShipping += order.total;
+        } else if (order.status === 'Delivered - Collected' || order.status === 'Delivered') {
+          cashInTreasury += order.total;
+        }
+      } else if (order.status === 'Returned') {
+         returnLosses += Number(order.shippingFee || 0);
+      }
+    });
+
+    totalProfit -= returnLosses;
+
     const avgMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0;
-    return { totalInStock, totalSold, totalRevenue, totalProfit, totalCost, avgMargin };
-  }, [products]);
+    return { totalInStock, totalSoldUnits, totalRevenue, totalProfit, cashWithShipping, cashInTreasury, returnLosses, avgMargin };
+  }, [products, orders]);
 
   const handleEdit = (product) => {
     setEditProduct(product);
@@ -239,11 +266,14 @@ export default function App() {
 
           {activeTab === 'dashboard' ? (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
                  <DashboardCard title={t.totalStock} value={metrics.totalInStock.toLocaleString()} icon="box" index={0} />
-                 <DashboardCard title={t.totalSold} value={metrics.totalSold.toLocaleString()} icon="cart" index={1} />
+                 <DashboardCard title={t.totalSold} value={metrics.totalSoldUnits.toLocaleString()} icon="cart" index={1} />
                  <DashboardCard title={t.totalRevenue} value={formatEGP(metrics.totalRevenue)} icon="dollar" index={2} />
                  <DashboardCard title={t.netProfit} value={formatEGP(metrics.totalProfit)} icon="chart" index={3} />
+                 <DashboardCard title={t.cashWithShipping} value={formatEGP(metrics.cashWithShipping)} icon="truck" index={4} />
+                 <DashboardCard title={t.cashInTreasury} value={formatEGP(metrics.cashInTreasury)} icon="wallet" index={5} />
+                 <DashboardCard title={t.returnLosses} value={formatEGP(metrics.returnLosses)} icon="alert" index={6} />
               </div>
 
               <div className="mb-8">
