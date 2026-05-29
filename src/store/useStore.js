@@ -1,15 +1,9 @@
 import { create } from 'zustand'
 import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, getDoc } from 'firebase/firestore'
-import { db } from '../firebase'
+import { db, auth } from '../firebase'
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth'
 
 const STORAGE_KEY = 'toja-inventory-v2-auth'
-
-export const TEAM_USERS = [
-  { id: 1, email: "youssefusameh@gmail.com", password: "youssef2004@", name: "Yousef", role: "Art Director" },
-  { id: 2, email: "ahmedarnous487@gmail.com", password: "ahmed2204@", name: "Ahmed", role: "Operations" },
-  { id: 3, email: "mostafaebrabim42@gmail.com", password: "mostafa2124@", name: "Moustafa", role: "Project Manager" },
-  { id: 4, email: "mohameedhasan81@gmail.com", password: "memo2005@", name: "Mohamed", role: "Marketing" }
-]
 
 function loadLocalData() {
   try {
@@ -56,6 +50,20 @@ export const useStore = create((set, get) => ({
   })(),
   listenersInitialized: false,
 
+  initAuthListener: () => {
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const userData = { id: user.uid, name: user.displayName || user.email.split('@')[0], email: user.email, role: "User" };
+        set({ currentUser: userData });
+        localStorage.setItem('toja_user', JSON.stringify(userData));
+        get().initializeListeners();
+      } else {
+        set({ currentUser: null });
+        localStorage.removeItem('toja_user');
+      }
+    });
+  },
+
   initializeListeners: () => {
     if (get().listenersInitialized) return;
 
@@ -82,24 +90,26 @@ export const useStore = create((set, get) => ({
     saveLocalData(get());
   },
 
-  login: (email, password) => {
-    const user = TEAM_USERS.find(u => u.email === email && u.password === password)
-    if (user) {
-      const userData = { id: user.id, name: user.name, email: user.email, role: user.role };
-      set({ currentUser: userData })
-      localStorage.setItem('toja_user', JSON.stringify(userData));
-      get().logActivity('Logged into the system')
-      return true
+  login: async (email, password) => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      get().logActivity('Logged into the system');
+      return { success: true };
+    } catch (error) {
+      console.error("Login failed:", error);
+      return { success: false, error: error.code };
     }
-    return false
   },
 
-  logout: () => {
-    const user = get().currentUser;
-    if (user) {
-      get().logActivity('Logged out of the system')
-      set({ currentUser: null })
-      localStorage.removeItem('toja_user');
+  logout: async () => {
+    try {
+      const user = get().currentUser;
+      if (user) {
+        get().logActivity('Logged out of the system');
+      }
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout failed:", error);
     }
   },
 

@@ -24,7 +24,7 @@ export default function App() {
   const t = translations[language];
 
   useEffect(() => {
-    useStore.getState().initializeListeners();
+    useStore.getState().initAuthListener();
   }, []);
   const [showLogs, setShowLogs] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);

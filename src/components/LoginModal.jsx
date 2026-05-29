@@ -11,11 +11,15 @@ export default function LoginModal() {
   const { login, language } = useStore((state) => state);
   const t = translations[language];
 
-  const handleSubmit = (e) => {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const success = login(email, password);
-    if (!success) {
-      setError(t.invalidEmailPassword);
+    setIsLoading(true);
+    const result = await login(email, password);
+    setIsLoading(false);
+    if (!result?.success) {
+      setError(t.invalidEmailPassword || 'Invalid credentials');
     }
   };
 
@@ -74,9 +78,12 @@ export default function LoginModal() {
 
           <button
             type="submit"
-            className="w-full h-12 mt-2 rounded-lg text-sm font-bold text-white bg-[#181E1C] hover:bg-black transition-colors"
+            disabled={isLoading}
+            className={`w-full h-12 mt-2 rounded-lg text-sm font-bold text-white transition-colors ${
+              isLoading ? 'bg-slate-400 cursor-not-allowed' : 'bg-[#181E1C] hover:bg-black'
+            }`}
           >
-            {t.signIn}
+            {isLoading ? '...' : t.signIn}
           </button>
         </form>
       </motion.div>
