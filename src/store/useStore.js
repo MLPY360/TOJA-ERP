@@ -268,6 +268,16 @@ export const useStore = create((set, get) => ({
     get().logActivity(`Updated order ${order.displayId || orderId} status to ${newStatus}`);
   },
 
+  updateOrderReturnReason: async (orderId, reason) => {
+    try {
+      const orderRef = doc(db, "orders", orderId);
+      await updateDoc(orderRef, { returnReason: reason });
+      get().logActivity(`Updated return reason for order ${orderId}`);
+    } catch (error) {
+      console.error('Failed to update return reason:', error);
+    }
+  },
+
   updateOrder: async (orderId, updatedData) => {
     try {
       const order = get().orders.find(o => o.id === orderId);

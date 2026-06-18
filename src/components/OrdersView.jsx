@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, PackageX, Download, MessageCircle, Pencil } from 'lucide-react';
+import { Search, PackageX, Download, MessageCircle, Pencil, AlertCircle, Check } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
 import ExportOrdersModal from './ExportOrdersModal';
 import EditOrderModal from './EditOrderModal';
+import ImageLightbox from './ImageLightbox';
 
 const getStatusBadge = (status) => {
   switch (status) {
@@ -19,6 +20,66 @@ const getStatusBadge = (status) => {
   }
 };
 
+const ReturnReasonBlock = ({ order }) => {
+  const { updateOrderReturnReason, language } = useStore();
+  const t = translations[language];
+  const [isEditing, setIsEditing] = useState(!order.returnReason);
+  const [reason, setReason] = useState(order.returnReason || '');
+
+  const handleSave = () => {
+    updateOrderReturnReason(order.id, reason);
+    setIsEditing(false);
+  };
+
+  if (order.status !== 'Returned') return null;
+
+  return (
+    <div className="my-2 bg-red-50/80 border border-red-100 rounded-xl p-3 w-full">
+      <div className="flex items-start gap-2">
+        <div className="mt-0.5 shrink-0 text-red-500">
+          <AlertCircle size={14} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] font-bold text-red-800 uppercase tracking-wider mb-1.5 text-start">{t.returnReason}</p>
+          {isEditing ? (
+            <div className="flex flex-col gap-2">
+              <input
+                type="text"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder={t.returnReasonPrompt}
+                className="w-full bg-white border border-red-200 rounded-lg px-3 py-2 text-xs text-slate-700 outline-none focus:border-red-400 focus:ring-2 focus:ring-red-400/20 text-start"
+                autoFocus
+              />
+              <div className="flex justify-end">
+                <button
+                  onClick={handleSave}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 shadow-sm shadow-red-500/20 text-white text-[11px] font-bold rounded-lg transition-colors"
+                >
+                  <Check size={12} strokeWidth={3} /> {t.saveReason}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-between items-start gap-3">
+              <p className="text-xs font-semibold text-red-700 leading-relaxed break-words text-start">
+                {order.returnReason || t.noReasonProvided}
+              </p>
+              <button
+                onClick={() => setIsEditing(true)}
+                className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-100/50 rounded-md transition-colors shrink-0 -mt-1"
+                title={t.editReason}
+              >
+                <Pencil size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function OrdersView() {
   const { orders, updateOrderStatus, language, products } = useStore();
   const t = translations[language];
@@ -26,6 +87,7 @@ export default function OrdersView() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [orderToEdit, setOrderToEdit] = useState(null);
+  const [lightboxImg, setLightboxImg] = useState(null);
 
   const formatWhatsAppNumber = (phone) => {
     let cleaned = phone.replace(/\D/g, '');
@@ -121,13 +183,13 @@ export default function OrdersView() {
               </tr>
             ) : (
               filtered.map((order, index) => (
-                <motion.tr
-                  key={order.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors"
-                >
+                <React.Fragment key={order.id}>
+                  <motion.tr
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors"
+                  >
                   <td className="p-4 px-6 align-middle text-start">
                     <p className="font-extrabold text-[#181E1C]">{order.displayId || order.id}</p>
                     <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{new Date(order.createdAt).toLocaleDateString()}</p>
@@ -162,7 +224,12 @@ export default function OrdersView() {
                         return (
                           <div key={i} className="flex items-center gap-2">
                             {product?.imageUrl ? (
-                              <img src={product.imageUrl} alt={product?.name} className="w-8 h-8 object-cover rounded-md border border-slate-200 shrink-0" />
+                              <img 
+                                src={product.imageUrl} 
+                                alt={product?.name} 
+                                className="w-8 h-8 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
+                                onClick={() => setLightboxImg(product.imageUrl)}
+                              />
                             ) : (
                               <div className="w-8 h-8 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
                                 <PackageX size={14} className="text-slate-400" />
@@ -214,7 +281,19 @@ export default function OrdersView() {
                       </button>
                     </div>
                   </td>
-                </motion.tr>
+                  </motion.tr>
+                  {order.status === 'Returned' && (
+                    <motion.tr
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="bg-slate-50/30"
+                    >
+                      <td colSpan="7" className="px-6 py-0 border-b border-slate-50">
+                        <ReturnReasonBlock order={order} />
+                      </td>
+                    </motion.tr>
+                  )}
+                </React.Fragment>
               ))
             )}
           </tbody>
@@ -280,7 +359,12 @@ export default function OrdersView() {
                     return (
                       <div key={i} className="flex items-center gap-3 bg-white p-2 rounded-lg border border-slate-100">
                         {product?.imageUrl ? (
-                          <img src={product.imageUrl} alt={product?.name} className="w-10 h-10 object-cover rounded-md border border-slate-200 shrink-0" />
+                          <img 
+                            src={product.imageUrl} 
+                            alt={product?.name} 
+                            className="w-10 h-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
+                            onClick={() => setLightboxImg(product.imageUrl)}
+                          />
                         ) : (
                           <div className="w-10 h-10 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
                             <PackageX size={16} className="text-slate-400" />
@@ -316,6 +400,9 @@ export default function OrdersView() {
                     <option value="Returned" className="text-slate-700 bg-white">{t.returned}</option>
                     <option value="Cancelled" className="text-slate-700 bg-white">{t.cancelled}</option>
                   </select>
+                  {order.status === 'Returned' && (
+                    <ReturnReasonBlock order={order} />
+                  )}
                 </div>
               </div>
             );
@@ -324,6 +411,7 @@ export default function OrdersView() {
       </div>
       <ExportOrdersModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} />
       <EditOrderModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} orderToEdit={orderToEdit} />
+      <ImageLightbox isOpen={!!lightboxImg} imageUrl={lightboxImg} onClose={() => setLightboxImg(null)} />
     </div>
   );
 }

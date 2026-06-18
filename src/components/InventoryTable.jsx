@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Plus, Minus, Search, PackageX, Trash2, Pencil } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
+import ImageLightbox from './ImageLightbox';
 
 function formatEGP(amount) {
   return amount.toLocaleString('en-EG') + ' EGP';
@@ -15,6 +16,7 @@ export default function InventoryTable({ onEdit }) {
   const t = translations[language];
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [lightboxImg, setLightboxImg] = useState(null);
 
   const filtered = products.filter((p) => {
     const q = searchQuery.toLowerCase();
@@ -101,7 +103,12 @@ export default function InventoryTable({ onEdit }) {
                     <td className="p-4 px-6 align-middle text-start">
                       <div className="flex items-center gap-3">
                         {product.imageUrl ? (
-                          <img src={product.imageUrl} alt={product.name} className="w-12 h-12 object-cover rounded-lg border border-slate-200 shrink-0" />
+                          <img 
+                            src={product.imageUrl} 
+                            alt={product.name} 
+                            className="w-12 h-12 object-cover rounded-lg border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
+                            onClick={() => setLightboxImg(product.imageUrl)}
+                          />
                         ) : (
                           <div className="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
                             <PackageX size={20} className="text-slate-400" />
@@ -226,7 +233,12 @@ export default function InventoryTable({ onEdit }) {
                 <div className="flex justify-between items-start gap-3">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
                     {product.imageUrl ? (
-                      <img src={product.imageUrl} alt={product.name} className="w-14 h-14 object-cover rounded-xl border border-slate-200 shrink-0" />
+                      <img 
+                        src={product.imageUrl} 
+                        alt={product.name} 
+                        className="w-14 h-14 object-cover rounded-xl border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
+                        onClick={() => setLightboxImg(product.imageUrl)}
+                      />
                     ) : (
                       <div className="w-14 h-14 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
                         <PackageX size={20} className="text-slate-400" />
@@ -263,6 +275,7 @@ export default function InventoryTable({ onEdit }) {
           })
         )}
       </div>
+      <ImageLightbox isOpen={!!lightboxImg} imageUrl={lightboxImg} onClose={() => setLightboxImg(null)} />
     </div>
   );
 }

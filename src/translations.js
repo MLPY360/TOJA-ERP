@@ -113,7 +113,12 @@ export const translations = {
     productImage: "Product Image",
     uploadImage: "Upload Image",
     uploading: "Uploading...",
-    changeImage: "Change Image"
+    changeImage: "Change Image",
+    returnReason: "Return Reason",
+    returnReasonPrompt: "Please enter the reason for return",
+    editReason: "Edit Reason",
+    saveReason: "Save Reason",
+    noReasonProvided: "No reason provided yet."
   },
   ar: {
     dashboard: "لوحة القيادة",
@@ -229,6 +234,11 @@ export const translations = {
     productImage: "صورة المنتج",
     uploadImage: "رفع صورة",
     uploading: "جاري الرفع...",
-    changeImage: "تغيير الصورة"
+    changeImage: "تغيير الصورة",
+    returnReason: "سبب المرتجع",
+    returnReasonPrompt: "يرجى إدخال سبب المرتجع",
+    editReason: "تعديل السبب",
+    saveReason: "حفظ السبب",
+    noReasonProvided: "لم يتم تقديم سبب بعد."
   }
 };
