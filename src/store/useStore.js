@@ -268,6 +268,48 @@ export const useStore = create((set, get) => ({
     get().logActivity(`Updated order ${order.displayId || orderId} status to ${newStatus}`);
   },
 
+  updateOrder: async (orderId, updatedData) => {
+    try {
+      const order = get().orders.find(o => o.id === orderId);
+      if (!order) return;
+      
+      const orderRef = doc(db, 'orders', orderId);
+
+      // Only update inventory if status is not cancelled/returned
+      const isActiveOrder = order.status !== 'Cancelled' && order.status !== 'Returned';
+      
+      if (isActiveOrder) {
+        // Revert old items
+        for (const item of order.items) {
+          const productRef = doc(db, 'products', item.productId);
+          const productSnap = await getDoc(productRef);
+          if (productSnap.exists()) {
+            const data = productSnap.data();
+            const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
+            const newSold = { ...currentSold, [item.size]: Math.max(0, (currentSold[item.size] || 0) - Number(item.qty)) };
+            await updateDoc(productRef, { sold: newSold });
+          }
+        }
+        // Apply new items
+        for (const item of updatedData.items) {
+          const productRef = doc(db, 'products', item.productId);
+          const productSnap = await getDoc(productRef);
+          if (productSnap.exists()) {
+            const data = productSnap.data();
+            const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
+            const newSold = { ...currentSold, [item.size]: (currentSold[item.size] || 0) + Number(item.qty) };
+            await updateDoc(productRef, { sold: newSold });
+          }
+        }
+      }
+
+      await updateDoc(orderRef, updatedData);
+      get().logActivity(`Updated order details: ${order.displayId || orderId}`);
+    } catch (error) {
+      console.error('Failed to update order:', error);
+    }
+  },
+
   addExpense: async (expenseData) => {
     try {
       await addDoc(collection(db, "expenses"), {

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, PackageX, Download, MessageCircle } from 'lucide-react';
+import { Search, PackageX, Download, MessageCircle, Pencil } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
 import ExportOrdersModal from './ExportOrdersModal';
+import EditOrderModal from './EditOrderModal';
 
 const getStatusBadge = (status) => {
   switch (status) {
@@ -23,6 +24,8 @@ export default function OrdersView() {
   const t = translations[language];
   const [searchQuery, setSearchQuery] = useState('');
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [orderToEdit, setOrderToEdit] = useState(null);
 
   const formatWhatsAppNumber = (phone) => {
     let cleaned = phone.replace(/\D/g, '');
@@ -183,7 +186,16 @@ export default function OrdersView() {
                   </td>
 
                   <td className="p-4 align-middle px-6 text-end">
-                    <span className="text-xs font-semibold text-slate-500">{order.createdBy}</span>
+                    <div className="flex items-center justify-end gap-3">
+                      <span className="text-xs font-semibold text-slate-500 hidden lg:inline">{order.createdBy}</span>
+                      <button
+                        onClick={() => { setOrderToEdit(order); setIsEditModalOpen(true); }}
+                        className="text-slate-400 hover:text-blue-500 transition-colors p-2 rounded-lg hover:bg-blue-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                        title={t.editOrder}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    </div>
                   </td>
                 </motion.tr>
               ))
@@ -210,9 +222,18 @@ export default function OrdersView() {
             return (
               <div key={order.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col gap-4">
                 <div className="flex justify-between items-start border-b border-slate-100 pb-3">
-                  <div>
-                    <h3 className="font-extrabold text-[#181E1C]">{displayId}</h3>
-                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">{new Date(order.createdAt).toLocaleDateString()} · {itemsCount} items</p>
+                  <div className="flex items-start gap-2">
+                    <div>
+                      <h3 className="font-extrabold text-[#181E1C]">{displayId}</h3>
+                      <p className="text-[11px] text-slate-400 font-medium mt-0.5">{new Date(order.createdAt).toLocaleDateString()} · {itemsCount} items</p>
+                    </div>
+                    <button
+                      onClick={() => { setOrderToEdit(order); setIsEditModalOpen(true); }}
+                      className="text-slate-400 hover:text-blue-500 transition-colors p-2 rounded-lg hover:bg-blue-50 min-h-[44px] min-w-[44px] flex items-center justify-center -mt-2"
+                      title={t.editOrder}
+                    >
+                      <Pencil size={16} />
+                    </button>
                   </div>
                   <div className="text-end">
                     <p className="font-black text-[#597867]">{order.total.toLocaleString('en-EG')} EGP</p>
@@ -260,6 +281,7 @@ export default function OrdersView() {
         )}
       </div>
       <ExportOrdersModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} />
+      <EditOrderModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} orderToEdit={orderToEdit} />
     </div>
   );
 }

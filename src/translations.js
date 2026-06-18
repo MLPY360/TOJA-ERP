@@ -107,7 +107,9 @@ export const translations = {
     itemsNeededBreakEven: "Items needed to break even",
     itemsSold: "Items Sold",
     targetAchieved: "Target Achieved! You are now making pure profit.",
-    remainingToBreakEven: "Remaining to break even"
+    remainingToBreakEven: "Remaining to break even",
+    editOrder: "Edit Order",
+    saveChanges: "Save Changes"
   },
   ar: {
     dashboard: "لوحة القيادة",
@@ -217,6 +219,8 @@ export const translations = {
     itemsNeededBreakEven: "قطعة مطلوبة للتعادل",
     itemsSold: "تم بيع",
     targetAchieved: "تم تحقيق الهدف! أنت الآن تحقق أرباحاً صافية.",
-    remainingToBreakEven: "متبقي للتعادل"
+    remainingToBreakEven: "متبقي للتعادل",
+    editOrder: "تعديل الطلب",
+    saveChanges: "حفظ التغييرات"
   }
 };
