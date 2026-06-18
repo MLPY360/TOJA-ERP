@@ -99,8 +99,19 @@ export default function InventoryTable({ onEdit }) {
                     className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors group"
                   >
                     <td className="p-4 px-6 align-middle text-start">
-                      <p className="font-bold text-[#181E1C] whitespace-nowrap">{product.name}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide">{product.sku}</p>
+                      <div className="flex items-center gap-3">
+                        {product.imageUrl ? (
+                          <img src={product.imageUrl} alt={product.name} className="w-12 h-12 object-cover rounded-lg border border-slate-200 shrink-0" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                            <PackageX size={20} className="text-slate-400" />
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-bold text-[#181E1C] whitespace-nowrap">{product.name}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide">{product.sku}</p>
+                        </div>
+                      </div>
                     </td>
                     
                     <td className="p-4 align-middle text-start">
@@ -212,10 +223,19 @@ export default function InventoryTable({ onEdit }) {
             const currentStock = totalInitial - totalSold;
             return (
               <div key={product.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col gap-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-bold text-[#181E1C]">{product.name}</h3>
-                    <p className="text-xs text-slate-400 font-medium uppercase mt-0.5">{product.sku}</p>
+                <div className="flex justify-between items-start gap-3">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    {product.imageUrl ? (
+                      <img src={product.imageUrl} alt={product.name} className="w-14 h-14 object-cover rounded-xl border border-slate-200 shrink-0" />
+                    ) : (
+                      <div className="w-14 h-14 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                        <PackageX size={20} className="text-slate-400" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-[#181E1C] truncate">{product.name}</h3>
+                      <p className="text-xs text-slate-400 font-medium uppercase mt-0.5">{product.sku}</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {onEdit && (

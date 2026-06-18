@@ -109,7 +109,11 @@ export const translations = {
     targetAchieved: "Target Achieved! You are now making pure profit.",
     remainingToBreakEven: "Remaining to break even",
     editOrder: "Edit Order",
-    saveChanges: "Save Changes"
+    saveChanges: "Save Changes",
+    productImage: "Product Image",
+    uploadImage: "Upload Image",
+    uploading: "Uploading...",
+    changeImage: "Change Image"
   },
   ar: {
     dashboard: "لوحة القيادة",
@@ -221,6 +225,10 @@ export const translations = {
     targetAchieved: "تم تحقيق الهدف! أنت الآن تحقق أرباحاً صافية.",
     remainingToBreakEven: "متبقي للتعادل",
     editOrder: "تعديل الطلب",
-    saveChanges: "حفظ التغييرات"
+    saveChanges: "حفظ التغييرات",
+    productImage: "صورة المنتج",
+    uploadImage: "رفع صورة",
+    uploading: "جاري الرفع...",
+    changeImage: "تغيير الصورة"
   }
 };

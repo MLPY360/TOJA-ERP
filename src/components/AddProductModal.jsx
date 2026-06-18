@@ -1,14 +1,19 @@
 import { useState, useEffect } from 'react'
-import { X } from 'lucide-react'
+import { X, ImagePlus, Loader2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
+import { uploadImageToImgBB } from '../utils/imgbb'
+import { translations } from '../translations'
 
 export default function AddProductModal({ isOpen, onClose, editProduct }) {
-  const { addProduct, updateProduct } = useStore()
+  const { addProduct, updateProduct, language } = useStore()
+  const t = translations[language]
   const isEditing = !!editProduct
+  const [isUploading, setIsUploading] = useState(false)
 
   const [form, setForm] = useState({
     name: '',
     sku: '',
+    imageUrl: '',
     initialStockM: '',
     initialStockL: '',
     initialStockXL: '',
@@ -22,6 +27,7 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
       setForm({
         name: editProduct.name,
         sku: editProduct.sku,
+        imageUrl: editProduct.imageUrl || '',
         initialStockM: String(editProduct.initialStock?.M || 0),
         initialStockL: String(editProduct.initialStock?.L || 0),
         initialStockXL: String(editProduct.initialStock?.XL || 0),
@@ -30,7 +36,7 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
         sellingPrice: String(editProduct.sellingPrice),
       })
     } else {
-      setForm({ name: '', sku: '', initialStockM: '', initialStockL: '', initialStockXL: '', initialStockXXL: '', costPrice: '', sellingPrice: '' })
+      setForm({ name: '', sku: '', imageUrl: '', initialStockM: '', initialStockL: '', initialStockXL: '', initialStockXXL: '', costPrice: '', sellingPrice: '' })
     }
   }, [editProduct, isOpen])
 
@@ -40,6 +46,20 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
     setForm((prev) => ({ ...prev, [field]: e.target.value }))
   }
 
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setIsUploading(true)
+    try {
+      const url = await uploadImageToImgBB(file)
+      setForm((prev) => ({ ...prev, imageUrl: url }))
+    } catch (err) {
+      alert("Failed to upload image.")
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!form.name.trim() || !form.sku.trim()) return
@@ -47,6 +67,7 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
     const data = {
       name: form.name.trim(),
       sku: form.sku.trim(),
+      imageUrl: form.imageUrl,
       initialStock: {
         M: parseInt(form.initialStockM, 10) || 0,
         L: parseInt(form.initialStockL, 10) || 0,
@@ -103,6 +124,35 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
                 placeholder="e.g. TOJ-POL-001"
                 className="h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:ring-2 focus:ring-[#597867]/20 focus:border-[#597867] transition-all outline-none"
               />
+            </div>
+
+            <div className="col-span-2 flex flex-col gap-1.5">
+              <label className="text-sm font-semibold text-slate-700">{t.productImage}</label>
+              <div className="flex items-center gap-4">
+                {form.imageUrl && (
+                  <img src={form.imageUrl} alt="Preview" className="w-16 h-16 object-cover rounded-xl border border-slate-200 shadow-sm" />
+                )}
+                <div className="flex-1 relative">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    disabled={isUploading}
+                    className="hidden"
+                    id="product-image-upload"
+                  />
+                  <label
+                    htmlFor="product-image-upload"
+                    className="flex items-center justify-center gap-2 h-11 px-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 text-sm font-semibold text-slate-600 cursor-pointer transition-colors"
+                  >
+                    {isUploading ? (
+                      <><Loader2 size={18} className="animate-spin text-[#597867]" /> {t.uploading}</>
+                    ) : (
+                      <><ImagePlus size={18} className="text-slate-400" /> {form.imageUrl ? t.changeImage : t.uploadImage}</>
+                    )}
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div className="col-span-2">

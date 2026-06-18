@@ -20,7 +20,7 @@ const getStatusBadge = (status) => {
 };
 
 export default function OrdersView() {
-  const { orders, updateOrderStatus, language } = useStore();
+  const { orders, updateOrderStatus, language, products } = useStore();
   const t = translations[language];
   const [searchQuery, setSearchQuery] = useState('');
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -156,9 +156,26 @@ export default function OrdersView() {
                   </td>
 
                   <td className="p-4 align-middle text-start">
-                    <span className="inline-flex items-center justify-center px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs font-bold">
-                      {order.items?.reduce((sum, item) => sum + item.qty, 0) || 0} items
-                    </span>
+                    <div className="flex flex-col gap-2">
+                      {order.items?.map((item, i) => {
+                        const product = products.find(p => p.id === item.productId);
+                        return (
+                          <div key={i} className="flex items-center gap-2">
+                            {product?.imageUrl ? (
+                              <img src={product.imageUrl} alt={product?.name} className="w-8 h-8 object-cover rounded-md border border-slate-200 shrink-0" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                                <PackageX size={14} className="text-slate-400" />
+                              </div>
+                            )}
+                            <div className="flex flex-col">
+                              <span className="text-[11px] font-bold text-slate-700 truncate max-w-[120px]">{product?.name || 'Unknown Product'}</span>
+                              <span className="text-[10px] text-slate-500 font-medium">Size: {item.size} | Qty: {item.qty}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </td>
 
                   <td className="p-4 align-middle text-start">
@@ -257,7 +274,32 @@ export default function OrdersView() {
                   <p className="text-xs text-slate-500 font-medium">{order.governorate} - {order.address}</p>
                 </div>
 
-                <div className="pt-2">
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 flex flex-col gap-2">
+                  {order.items?.map((item, i) => {
+                    const product = products.find(p => p.id === item.productId);
+                    return (
+                      <div key={i} className="flex items-center gap-3 bg-white p-2 rounded-lg border border-slate-100">
+                        {product?.imageUrl ? (
+                          <img src={product.imageUrl} alt={product?.name} className="w-10 h-10 object-cover rounded-md border border-slate-200 shrink-0" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                            <PackageX size={16} className="text-slate-400" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-slate-700 truncate">{product?.name || 'Unknown Product'}</p>
+                          <p className="text-[10px] text-slate-500 font-medium mt-0.5">{product?.sku || '---'}</p>
+                        </div>
+                        <div className="text-end shrink-0">
+                          <p className="text-[11px] font-bold text-[#597867]">{item.size}</p>
+                          <p className="text-[10px] font-medium text-slate-500">Qty: {item.qty}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="pt-1">
                   <select
                     value={order.status}
                     onChange={(e) => handleStatusChange(order, e.target.value)}
