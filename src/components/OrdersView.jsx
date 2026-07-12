@@ -20,6 +20,12 @@ const getStatusBadge = (status) => {
   }
 };
 
+const formatDate = (dateValue) => {
+  if (!dateValue) return 'N/A';
+  if (dateValue.toDate) return dateValue.toDate().toLocaleDateString();
+  return new Date(dateValue).toLocaleDateString();
+};
+
 const ReturnReasonBlock = ({ order }) => {
   const { updateOrderReturnReason, language } = useStore();
   const t = translations[language];
@@ -90,6 +96,7 @@ export default function OrdersView() {
   const [lightboxImg, setLightboxImg] = useState(null);
 
   const formatWhatsAppNumber = (phone) => {
+    if (!phone) return '';
     let cleaned = phone.replace(/\D/g, '');
     if (cleaned.startsWith('01')) {
       cleaned = '20' + cleaned.substring(1);
@@ -99,17 +106,16 @@ export default function OrdersView() {
 
   const handleStatusChange = (order, newStatus) => {
     updateOrderStatus(order.id, newStatus);
-    
+
     if (newStatus === 'Shipped') {
-      const formattedPhone = formatWhatsAppNumber(order.phone);
+      const cPhone = order.phone || order.customerDetails?.phone || '';
+      const formattedPhone = formatWhatsAppNumber(cPhone);
       const displayId = order.displayId || order.id;
       const shortId = displayId.length > 10 ? displayId.substring(displayId.length - 4) : displayId;
-      
-      const message = `أهلاً يا ${order.customerName} 👋
-أوردرك من TOJA طلع مع شركة الشحن وهو في الطريق ليك دلوقتي! 🚚
-رقم الأوردر: ${shortId}
-إجمالي الحساب: ${order.total} جنيه
-لو في أي استفسار إحنا دايماً معاك.`;
+      const cName = order.customerName || order.customerDetails?.firstName || 'العميل';
+      const cTotal = order.total || order.totals?.grandTotal || 0;
+
+      const message = `أهلاً يا ${cName} 👋\nأوردرك من TOJA طلع مع شركة الشحن وهو في الطريق ليك دلوقتي! 🚚\nرقم الأوردر: ${shortId}\nإجمالي الحساب: ${cTotal} جنيه\nلو في أي استفسار إحنا دايماً معاك.`;
 
       const encodedMessage = encodeURIComponent(message);
       window.open(`https://wa.me/${formattedPhone}?text=${encodedMessage}`, '_blank');
@@ -119,9 +125,11 @@ export default function OrdersView() {
   const filtered = orders.filter((o) => {
     const q = searchQuery.toLowerCase();
     const displayId = o.displayId || o.id;
-    return displayId.toLowerCase().includes(q) || 
-           o.customerName.toLowerCase().includes(q) || 
-           o.phone.includes(q);
+    const cName = o.customerName || (o.customerDetails ? `${o.customerDetails.firstName} ${o.customerDetails.lastName}` : '');
+    const cPhone = o.phone || o.customerDetails?.phone || '';
+    return displayId.toLowerCase().includes(q) ||
+      cName.toLowerCase().includes(q) ||
+      cPhone.includes(q);
   });
 
   return (
@@ -182,119 +190,128 @@ export default function OrdersView() {
                 </td>
               </tr>
             ) : (
-              filtered.map((order, index) => (
-                <React.Fragment key={order.id}>
-                  <motion.tr
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors"
-                  >
-                  <td className="p-4 px-6 align-middle text-start">
-                    <p className="font-extrabold text-[#181E1C]">{order.displayId || order.id}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{new Date(order.createdAt).toLocaleDateString()}</p>
-                  </td>
-                  
-                  <td className="p-4 align-middle text-start">
-                    <p className="font-bold text-[#181E1C]">{order.customerName}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <p className="text-[11px] text-slate-500">{order.phone}</p>
-                      <button
-                        onClick={() => {
-                          const formattedPhone = formatWhatsAppNumber(order.phone);
-                          window.open(`https://wa.me/${formattedPhone}`, '_blank');
-                        }}
-                        className="text-emerald-500 hover:text-emerald-600 transition-colors"
-                        title="Chat on WhatsApp"
-                      >
-                        <MessageCircle size={14} />
-                      </button>
-                    </div>
-                  </td>
-                  
-                  <td className="p-4 align-middle text-start">
-                    <p className="font-semibold text-slate-700">{order.governorate}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={order.address}>{order.address}</p>
-                  </td>
+              filtered.map((order, index) => {
+                const cName = order.customerName || (order.customerDetails ? `${order.customerDetails.firstName} ${order.customerDetails.lastName}` : 'Unknown');
+                const cPhone = order.phone || order.customerDetails?.phone || '';
+                const cCity = order.governorate || order.customerDetails?.city || 'Unknown';
+                const cAddress = order.address || order.customerDetails?.address || '';
+                const cTotal = order.total ?? order.totals?.grandTotal ?? 0;
+                const cShipping = order.shippingFee ?? order.totals?.shipping ?? 0;
 
-                  <td className="p-4 align-middle text-start">
-                    <div className="flex flex-col gap-2">
-                      {order.items?.map((item, i) => {
-                        const product = products.find(p => p.id === item.productId);
-                        return (
-                          <div key={i} className="flex items-center gap-2">
-                            {product?.imageUrl ? (
-                              <img 
-                                src={product.imageUrl} 
-                                alt={product?.name} 
-                                className="w-8 h-8 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
-                                onClick={() => setLightboxImg(product.imageUrl)}
-                              />
-                            ) : (
-                              <div className="w-8 h-8 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
-                                <PackageX size={14} className="text-slate-400" />
-                              </div>
-                            )}
-                            <div className="flex flex-col">
-                              <span className="text-[11px] font-bold text-slate-700 truncate max-w-[120px]">{product?.name || 'Unknown Product'}</span>
-                              <span className="text-[10px] text-slate-500 font-medium">Size: {item.size} | Qty: {item.qty}</span>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </td>
-
-                  <td className="p-4 align-middle text-start">
-                    <p className="font-black text-[#597867]">{order.total.toLocaleString('en-EG')} EGP</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5 font-medium whitespace-nowrap">{t.incShipping} {order.shippingFee} EGP</p>
-                  </td>
-
-                  <td className="p-4 align-middle text-center">
-                    <select
-                      value={order.status}
-                      onChange={(e) => handleStatusChange(order, e.target.value)}
-                      className={`text-xs font-bold px-3 py-1.5 rounded-full border outline-none cursor-pointer appearance-none text-center ${getStatusBadge(order.status)}`}
-                      style={{ textAlignLast: 'center' }}
-                    >
-                      <option value="Pending" className="text-slate-700 bg-white">{t.pending}</option>
-                      <option value="Shipped" className="text-slate-700 bg-white">{t.shipped}</option>
-                      {order.status === 'Delivered' && (
-                        <option value="Delivered" className="text-slate-700 bg-white">{t.delivered}</option>
-                      )}
-                      <option value="Delivered - Pending Cash" className="text-slate-700 bg-white">{t.deliveredPendingCash}</option>
-                      <option value="Delivered - Collected" className="text-slate-700 bg-white">{t.deliveredCollected}</option>
-                      <option value="Returned" className="text-slate-700 bg-white">{t.returned}</option>
-                      <option value="Cancelled" className="text-slate-700 bg-white">{t.cancelled}</option>
-                    </select>
-                  </td>
-
-                  <td className="p-4 align-middle px-6 text-end">
-                    <div className="flex items-center justify-end gap-3">
-                      <span className="text-xs font-semibold text-slate-500 hidden lg:inline">{order.createdBy}</span>
-                      <button
-                        onClick={() => { setOrderToEdit(order); setIsEditModalOpen(true); }}
-                        className="text-slate-400 hover:text-blue-500 transition-colors p-2 rounded-lg hover:bg-blue-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
-                        title={t.editOrder}
-                      >
-                        <Pencil size={16} />
-                      </button>
-                    </div>
-                  </td>
-                  </motion.tr>
-                  {order.status === 'Returned' && (
+                return (
+                  <React.Fragment key={order.id}>
                     <motion.tr
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="bg-slate-50/30"
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors"
                     >
-                      <td colSpan="7" className="px-6 py-0 border-b border-slate-50">
-                        <ReturnReasonBlock order={order} />
+                      <td className="p-4 px-6 align-middle text-start">
+                        <p className="font-extrabold text-[#181E1C]">{order.displayId || order.id}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{formatDate(order.createdAt)}</p>
+                      </td>
+
+                      <td className="p-4 align-middle text-start">
+                        <p className="font-bold text-[#181E1C]">{cName}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-[11px] text-slate-500">{cPhone}</p>
+                          <button
+                            onClick={() => {
+                              const formattedPhone = formatWhatsAppNumber(cPhone);
+                              window.open(`https://wa.me/${formattedPhone}`, '_blank');
+                            }}
+                            className="text-emerald-500 hover:text-emerald-600 transition-colors"
+                            title="Chat on WhatsApp"
+                          >
+                            <MessageCircle size={14} />
+                          </button>
+                        </div>
+                      </td>
+
+                      <td className="p-4 align-middle text-start">
+                        <p className="font-semibold text-slate-700">{cCity}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={cAddress}>{cAddress}</p>
+                      </td>
+
+                      <td className="p-4 align-middle text-start">
+                        <div className="flex flex-col gap-2">
+                          {order.items?.map((item, i) => {
+                            const product = products.find(p => p.id === item.productId) || item;
+                            return (
+                              <div key={i} className="flex items-center gap-2">
+                                {product?.imageUrl || product?.image ? (
+                                  <img
+                                    src={product?.imageUrl || product?.image}
+                                    alt={product?.name}
+                                    className="w-8 h-8 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                                    onClick={() => setLightboxImg(product?.imageUrl || product?.image)}
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                                    <PackageX size={14} className="text-slate-400" />
+                                  </div>
+                                )}
+                                <div className="flex flex-col">
+                                  <span className="text-[11px] font-bold text-slate-700 truncate max-w-[120px]">{product?.name || 'Unknown Product'}</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Size: {item.size} | Qty: {item.qty || item.quantity}</span>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </td>
+
+                      <td className="p-4 align-middle text-start">
+                        <p className="font-black text-[#597867]">{cTotal.toLocaleString('en-EG')} EGP</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5 font-medium whitespace-nowrap">{t.incShipping} {cShipping} EGP</p>
+                      </td>
+
+                      <td className="p-4 align-middle text-center">
+                        <select
+                          value={order.status}
+                          onChange={(e) => handleStatusChange(order, e.target.value)}
+                          className={`text-xs font-bold px-3 py-1.5 rounded-full border outline-none cursor-pointer appearance-none text-center ${getStatusBadge(order.status)}`}
+                          style={{ textAlignLast: 'center' }}
+                        >
+                          <option value="Pending" className="text-slate-700 bg-white">{t.pending}</option>
+                          <option value="Shipped" className="text-slate-700 bg-white">{t.shipped}</option>
+                          {order.status === 'Delivered' && (
+                            <option value="Delivered" className="text-slate-700 bg-white">{t.delivered}</option>
+                          )}
+                          <option value="Delivered - Pending Cash" className="text-slate-700 bg-white">{t.deliveredPendingCash}</option>
+                          <option value="Delivered - Collected" className="text-slate-700 bg-white">{t.deliveredCollected}</option>
+                          <option value="Returned" className="text-slate-700 bg-white">{t.returned}</option>
+                          <option value="Cancelled" className="text-slate-700 bg-white">{t.cancelled}</option>
+                        </select>
+                      </td>
+
+                      <td className="p-4 align-middle px-6 text-end">
+                        <div className="flex items-center justify-end gap-3">
+                          <span className="text-xs font-semibold text-slate-500 hidden lg:inline">{order.createdBy || 'Website'}</span>
+                          <button
+                            onClick={() => { setOrderToEdit(order); setIsEditModalOpen(true); }}
+                            className="text-slate-400 hover:text-blue-500 transition-colors p-2 rounded-lg hover:bg-blue-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                            title={t.editOrder}
+                          >
+                            <Pencil size={16} />
+                          </button>
+                        </div>
                       </td>
                     </motion.tr>
-                  )}
-                </React.Fragment>
-              ))
+                    {order.status === 'Returned' && (
+                      <motion.tr
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="bg-slate-50/30"
+                      >
+                        <td colSpan="7" className="px-6 py-0 border-b border-slate-50">
+                          <ReturnReasonBlock order={order} />
+                        </td>
+                      </motion.tr>
+                    )}
+                  </React.Fragment>
+                )
+              })
             )}
           </tbody>
         </table>
@@ -314,14 +331,21 @@ export default function OrdersView() {
         ) : (
           filtered.map((order) => {
             const displayId = order.displayId || order.id;
-            const itemsCount = order.items?.reduce((sum, item) => sum + item.qty, 0) || 0;
+            const itemsCount = order.items?.reduce((sum, item) => sum + (item.qty || item.quantity || 1), 0) || 0;
+            const cName = order.customerName || (order.customerDetails ? `${order.customerDetails.firstName} ${order.customerDetails.lastName}` : 'Unknown');
+            const cPhone = order.phone || order.customerDetails?.phone || '';
+            const cCity = order.governorate || order.customerDetails?.city || 'Unknown';
+            const cAddress = order.address || order.customerDetails?.address || '';
+            const cTotal = order.total ?? order.totals?.grandTotal ?? 0;
+            const cShipping = order.shippingFee ?? order.totals?.shipping ?? 0;
+
             return (
               <div key={order.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col gap-4">
                 <div className="flex justify-between items-start border-b border-slate-100 pb-3">
                   <div className="flex items-start gap-2">
                     <div>
                       <h3 className="font-extrabold text-[#181E1C]">{displayId}</h3>
-                      <p className="text-[11px] text-slate-400 font-medium mt-0.5">{new Date(order.createdAt).toLocaleDateString()} · {itemsCount} items</p>
+                      <p className="text-[11px] text-slate-400 font-medium mt-0.5">{formatDate(order.createdAt)} · {itemsCount} items</p>
                     </div>
                     <button
                       onClick={() => { setOrderToEdit(order); setIsEditModalOpen(true); }}
@@ -332,38 +356,38 @@ export default function OrdersView() {
                     </button>
                   </div>
                   <div className="text-end">
-                    <p className="font-black text-[#597867]">{order.total.toLocaleString('en-EG')} EGP</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{t.incShipping} {order.shippingFee} EGP</p>
+                    <p className="font-black text-[#597867]">{cTotal.toLocaleString('en-EG')} EGP</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{t.incShipping} {cShipping} EGP</p>
                   </div>
                 </div>
 
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <p className="font-bold text-[#181E1C]">{order.customerName}</p>
+                    <p className="font-bold text-[#181E1C]">{cName}</p>
                     <button
                       onClick={() => {
-                        const formattedPhone = formatWhatsAppNumber(order.phone);
+                        const formattedPhone = formatWhatsAppNumber(cPhone);
                         window.open(`https://wa.me/${formattedPhone}`, '_blank');
                       }}
                       className="text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-colors"
                     >
-                      <MessageCircle size={14} /> <span className="text-[11px] font-bold">{order.phone}</span>
+                      <MessageCircle size={14} /> <span className="text-[11px] font-bold">{cPhone}</span>
                     </button>
                   </div>
-                  <p className="text-xs text-slate-500 font-medium">{order.governorate} - {order.address}</p>
+                  <p className="text-xs text-slate-500 font-medium">{cCity} - {cAddress}</p>
                 </div>
 
                 <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 flex flex-col gap-2">
                   {order.items?.map((item, i) => {
-                    const product = products.find(p => p.id === item.productId);
+                    const product = products.find(p => p.id === item.productId) || item;
                     return (
                       <div key={i} className="flex items-center gap-3 bg-white p-2 rounded-lg border border-slate-100">
-                        {product?.imageUrl ? (
-                          <img 
-                            src={product.imageUrl} 
-                            alt={product?.name} 
-                            className="w-10 h-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
-                            onClick={() => setLightboxImg(product.imageUrl)}
+                        {product?.imageUrl || product?.image ? (
+                          <img
+                            src={product?.imageUrl || product?.image}
+                            alt={product?.name}
+                            className="w-10 h-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => setLightboxImg(product?.imageUrl || product?.image)}
                           />
                         ) : (
                           <div className="w-10 h-10 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
@@ -376,7 +400,7 @@ export default function OrdersView() {
                         </div>
                         <div className="text-end shrink-0">
                           <p className="text-[11px] font-bold text-[#597867]">{item.size}</p>
-                          <p className="text-[10px] font-medium text-slate-500">Qty: {item.qty}</p>
+                          <p className="text-[10px] font-medium text-slate-500">Qty: {item.qty || item.quantity}</p>
                         </div>
                       </div>
                     )

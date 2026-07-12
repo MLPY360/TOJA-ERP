@@ -6,9 +6,9 @@ import { translations } from '../translations';
 import SettlementReportModal from './SettlementReportModal';
 
 export default function FinanceView() {
-  const { 
-    expenses, addExpense, deleteExpense, language, 
-    products, orders, 
+  const {
+    expenses, addExpense, deleteExpense, language,
+    products, orders,
     partners, addPartner, updatePartner, deletePartner,
     withdrawals, addWithdrawal, deleteWithdrawal
   } = useStore();
@@ -28,7 +28,7 @@ export default function FinanceView() {
   const [isAddingPartner, setIsAddingPartner] = useState(false);
   const [partnerName, setPartnerName] = useState('');
   const [partnerShare, setPartnerShare] = useState('');
-  
+
   // Withdrawals State
   const [isAddingWithdrawal, setIsAddingWithdrawal] = useState(false);
   const [withdrawalPartnerId, setWithdrawalPartnerId] = useState('');
@@ -52,14 +52,16 @@ export default function FinanceView() {
         let itemsRevenue = 0;
         order.items?.forEach(item => {
           const product = products.find(p => p.id === item.productId);
+          const itemQty = item.qty || item.quantity || 1; // قراءة الكمية بالطريقتين
           if (product) {
-            orderCost += product.costPrice * item.qty;
-            itemsRevenue += product.sellingPrice * item.qty;
+            orderCost += product.costPrice * itemQty;
+            itemsRevenue += product.sellingPrice * itemQty;
           }
         });
         totalProfit += (itemsRevenue - orderCost);
       } else if (order.status === 'Returned') {
-         returnLosses += Number(order.shippingFee || 0);
+        // قراءة مصاريف الشحن بالطريقتين لتفادي الإيرور
+        returnLosses += Number(order.shippingFee ?? order.totals?.shipping ?? 0);
       }
     });
 
@@ -105,10 +107,10 @@ export default function FinanceView() {
   const handleAddPartner = (e) => {
     e.preventDefault();
     if (!partnerName || !partnerShare) return;
-    
+
     const currentTotalShare = partners.reduce((sum, p) => sum + Number(p.profitSharePercentage), 0);
     const newShare = Number(partnerShare);
-    
+
     if (currentTotalShare + newShare > 100) {
       alert(`Cannot add partner. Total profit share cannot exceed 100%. Current total is ${currentTotalShare}%.`);
       return;
@@ -126,14 +128,14 @@ export default function FinanceView() {
   const handleAddWithdrawal = (e) => {
     e.preventDefault();
     if (!withdrawalPartnerId || !withdrawalAmount || Number(withdrawalAmount) <= 0) return;
-    
+
     addWithdrawal({
       partnerId: withdrawalPartnerId,
       amount: Number(withdrawalAmount),
       date: withdrawalDate,
       description: withdrawalDescription
     });
-    
+
     setIsAddingWithdrawal(false);
     setWithdrawalAmount('');
     setWithdrawalDescription('');
@@ -143,22 +145,20 @@ export default function FinanceView() {
 
   return (
     <div className="flex flex-col gap-6">
-      
+
       {/* Top Tabs */}
       <div className="flex items-center gap-2 p-1.5 bg-slate-200/50 rounded-xl w-full sm:w-max">
         <button
           onClick={() => setActiveTab('expenses')}
-          className={`flex-1 sm:px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
-            activeTab === 'expenses' ? 'bg-white text-[#181E1C] shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}
+          className={`flex-1 sm:px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'expenses' ? 'bg-white text-[#181E1C] shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
         >
           {t.expenseTracker || 'Expense Tracker'}
         </button>
         <button
           onClick={() => setActiveTab('partners')}
-          className={`flex-1 sm:px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
-            activeTab === 'partners' ? 'bg-white text-[#181E1C] shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}
+          className={`flex-1 sm:px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'partners' ? 'bg-white text-[#181E1C] shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
         >
           {t.partnersLedger || 'Partners Ledger'}
         </button>
@@ -467,15 +467,15 @@ export default function FinanceView() {
               return (
                 <div key={partner.id} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex flex-col gap-4 relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-4">
-                     <button onClick={() => deletePartner(partner.id)} className="text-slate-300 hover:text-red-500 transition-colors">
-                       <Trash2 size={16} />
-                     </button>
+                    <button onClick={() => deletePartner(partner.id)} className="text-slate-300 hover:text-red-500 transition-colors">
+                      <Trash2 size={16} />
+                    </button>
                   </div>
                   <div>
                     <h3 className="font-extrabold text-[#181E1C] text-lg">{partner.name}</h3>
                     <p className="text-xs font-bold text-slate-400 mt-0.5">{partner.profitSharePercentage}% {t.profitShare || 'Profit Share'}</p>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 gap-3 mt-2">
                     <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                       <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">{t.profitShare || 'Profit Share'}</p>
@@ -713,10 +713,10 @@ export default function FinanceView() {
         </div>
       )}
 
-      <SettlementReportModal 
-        isOpen={isReportOpen} 
-        onClose={() => setIsReportOpen(false)} 
-        netProfit={netProfit} 
+      <SettlementReportModal
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+        netProfit={netProfit}
       />
     </div>
   );
