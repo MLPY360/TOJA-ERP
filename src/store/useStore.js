@@ -14,7 +14,7 @@ function loadLocalData() {
         language: data.language || 'en'
       }
     }
-  } catch {}
+  } catch { }
   return {
     language: 'en'
   }
@@ -203,20 +203,24 @@ export const useStore = create((set, get) => ({
       console.log('Step 2: Deducting stock for order items');
       for (const item of orderData.items) {
         try {
-          console.log("Attempting to update product ID:", item.productId);
-          const productRef = doc(db, 'products', item.productId);
+          const productId = item.productId || item.id;
+          if (!productId) continue;
+
+          console.log("Attempting to update product ID:", productId);
+          const productRef = doc(db, 'products', productId);
           const productSnap = await getDoc(productRef);
-          
+
           if (!productSnap.exists()) {
-            console.error(`Product doc NOT FOUND for ID: ${item.productId}`);
-            continue; 
+            console.error(`Product doc NOT FOUND for ID: ${productId}`);
+            continue;
           }
 
           const productData = productSnap.data();
           const currentSold = productData.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
-          
+          const qty = Number(item.qty) || Number(item.quantity) || 1;
+
           await updateDoc(productRef, {
-            [`sold.${item.size}`]: (currentSold[item.size] || 0) + Number(item.qty)
+            [`sold.${item.size}`]: (currentSold[item.size] || 0) + qty
           });
           console.log(`Successfully updated sold count for ${item.size}`);
         } catch (err) {
@@ -234,7 +238,7 @@ export const useStore = create((set, get) => ({
   updateOrderStatus: async (orderId, newStatus) => {
     const order = get().orders.find(o => o.id === orderId);
     if (!order) return;
-    
+
     const orderRef = doc(db, "orders", orderId);
     await updateDoc(orderRef, { status: newStatus });
 
@@ -243,23 +247,31 @@ export const useStore = create((set, get) => ({
 
     if (isOldRestockingStatus && !isNewRestockingStatus) {
       for (const item of order.items) {
-        const productRef = doc(db, "products", item.productId);
+        const productId = item.productId || item.id;
+        if (!productId) continue;
+
+        const productRef = doc(db, "products", productId);
         const productSnap = await getDoc(productRef);
         if (productSnap.exists()) {
           const data = productSnap.data();
           const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
-          const newSold = { ...currentSold, [item.size]: (currentSold[item.size] || 0) + item.qty };
+          const qty = Number(item.qty) || Number(item.quantity) || 1;
+          const newSold = { ...currentSold, [item.size]: (currentSold[item.size] || 0) + qty };
           await updateDoc(productRef, { sold: newSold });
         }
       }
     } else if (!isOldRestockingStatus && isNewRestockingStatus) {
       for (const item of order.items) {
-        const productRef = doc(db, "products", item.productId);
+        const productId = item.productId || item.id;
+        if (!productId) continue;
+
+        const productRef = doc(db, "products", productId);
         const productSnap = await getDoc(productRef);
         if (productSnap.exists()) {
           const data = productSnap.data();
           const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
-          const newSold = { ...currentSold, [item.size]: Math.max(0, (currentSold[item.size] || 0) - item.qty) };
+          const qty = Number(item.qty) || Number(item.quantity) || 1;
+          const newSold = { ...currentSold, [item.size]: Math.max(0, (currentSold[item.size] || 0) - qty) };
           await updateDoc(productRef, { sold: newSold });
         }
       }
@@ -282,32 +294,40 @@ export const useStore = create((set, get) => ({
     try {
       const order = get().orders.find(o => o.id === orderId);
       if (!order) return;
-      
+
       const orderRef = doc(db, 'orders', orderId);
 
       // Only update inventory if status is not cancelled/returned
       const isActiveOrder = order.status !== 'Cancelled' && order.status !== 'Returned';
-      
+
       if (isActiveOrder) {
         // Revert old items
         for (const item of order.items) {
-          const productRef = doc(db, 'products', item.productId);
+          const productId = item.productId || item.id;
+          if (!productId) continue;
+
+          const productRef = doc(db, 'products', productId);
           const productSnap = await getDoc(productRef);
           if (productSnap.exists()) {
             const data = productSnap.data();
             const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
-            const newSold = { ...currentSold, [item.size]: Math.max(0, (currentSold[item.size] || 0) - Number(item.qty)) };
+            const qty = Number(item.qty) || Number(item.quantity) || 1;
+            const newSold = { ...currentSold, [item.size]: Math.max(0, (currentSold[item.size] || 0) - qty) };
             await updateDoc(productRef, { sold: newSold });
           }
         }
         // Apply new items
         for (const item of updatedData.items) {
-          const productRef = doc(db, 'products', item.productId);
+          const productId = item.productId || item.id;
+          if (!productId) continue;
+
+          const productRef = doc(db, 'products', productId);
           const productSnap = await getDoc(productRef);
           if (productSnap.exists()) {
             const data = productSnap.data();
             const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
-            const newSold = { ...currentSold, [item.size]: (currentSold[item.size] || 0) + Number(item.qty) };
+            const qty = Number(item.qty) || Number(item.quantity) || 1;
+            const newSold = { ...currentSold, [item.size]: (currentSold[item.size] || 0) + qty };
             await updateDoc(productRef, { sold: newSold });
           }
         }

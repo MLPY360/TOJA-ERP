@@ -19,11 +19,14 @@ function CustomTooltip({ active, payload, label }) {
       <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
         {label}
       </p>
-      {payload.map((entry, i) => (
-        <p key={i} className="text-[13px] font-bold" style={{ color: entry.color }}>
-          {entry.name}: {Number(entry.value).toLocaleString('en-EG')} EGP
-        </p>
-      ))}
+      {payload.map((entry, i) => {
+        const val = Number(entry.value) || 0;
+        return (
+          <p key={i} className="text-[13px] font-bold" style={{ color: entry.color }}>
+            {entry.name}: {val.toLocaleString('en-EG')} EGP
+          </p>
+        );
+      })}
     </div>
   )
 }
@@ -35,10 +38,14 @@ export default function ProfitChart({ products }) {
   const chartData = useMemo(() => {
     return products.map((p) => {
       const totalSold = (p.sold?.M || 0) + (p.sold?.L || 0) + (p.sold?.XL || 0) + (p.sold?.XXL || 0)
+      const selling = Number(p.sellingPrice) || 0;
+      const cost = Number(p.costPrice) || 0;
+      const pName = p.name || 'Unknown';
+
       return {
-        name: p.name.length > 16 ? p.name.substring(0, 16) + '…' : p.name,
-        revenue: totalSold * p.sellingPrice,
-        profit: totalSold * (p.sellingPrice - p.costPrice),
+        name: pName.length > 16 ? pName.substring(0, 16) + '…' : pName,
+        revenue: totalSold * selling,
+        profit: totalSold * (selling - cost),
       }
     })
   }, [products])
