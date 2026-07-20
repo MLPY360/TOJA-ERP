@@ -118,7 +118,15 @@ export const translations = {
     returnReasonPrompt: "Please enter the reason for return",
     editReason: "Edit Reason",
     saveReason: "Save Reason",
-    noReasonProvided: "No reason provided yet."
+    noReasonProvided: "No reason provided yet.",
+    deleteOrder: "Delete Order",
+    deleteConfirmTitle: "Confirm Delete",
+    deleteConfirmPrompt: "Are you sure you want to permanently delete this order? This cannot be undone.",
+    delete: "Delete",
+    internalNotes: "Internal Notes",
+    addNote: "Add Note",
+    notePlaceholder: "Type an internal note...",
+    noNotes: "No notes added yet."
   },
   ar: {
     dashboard: "لوحة القيادة",
@@ -236,9 +244,17 @@ export const translations = {
     uploading: "جاري الرفع...",
     changeImage: "تغيير الصورة",
     returnReason: "سبب المرتجع",
-    returnReasonPrompt: "يرجى إدخال سبب المرتجع",
+    returnReasonPrompt: "يرجى إدخل سبب المرتجع",
     editReason: "تعديل السبب",
     saveReason: "حفظ السبب",
-    noReasonProvided: "لم يتم تقديم سبب بعد."
+    noReasonProvided: "لم يتم تقديم سبب بعد.",
+    deleteOrder: "حذف الطلب",
+    deleteConfirmTitle: "تأكيد الحذف",
+    deleteConfirmPrompt: "هل أنت متأكد أنك تريد حذف هذا الطلب نهائياً؟ لا يمكن التراجع عن هذا الإجراء.",
+    delete: "حذف",
+    internalNotes: "ملاحظات داخلية",
+    addNote: "إضافة ملاحظة",
+    notePlaceholder: "اكتب ملاحظة داخلية...",
+    noNotes: "لا توجد ملاحظات مضافة بعد."
   }
 };

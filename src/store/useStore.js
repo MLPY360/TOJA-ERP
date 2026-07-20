@@ -417,6 +417,55 @@ export const useStore = create((set, get) => ({
     } catch (error) {
       console.error("Failed to delete withdrawal:", error);
     }
+  },
+
+  deleteOrder: async (orderId) => {
+    try {
+      const order = get().orders.find(o => o.id === orderId);
+      if (!order) return;
+
+      const isRestocked = order.status === 'Cancelled' || order.status === 'Returned';
+      if (!isRestocked) {
+        for (const item of order.items) {
+          const productId = item.productId || item.id;
+          if (!productId) continue;
+
+          const productRef = doc(db, 'products', productId);
+          const productSnap = await getDoc(productRef);
+          if (productSnap.exists()) {
+            const data = productSnap.data();
+            const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
+            const qty = Number(item.qty) || Number(item.quantity) || 1;
+            const newSold = { ...currentSold, [item.size]: Math.max(0, (currentSold[item.size] || 0) - qty) };
+            await updateDoc(productRef, { sold: newSold });
+          }
+        }
+      }
+
+      await deleteDoc(doc(db, "orders", orderId));
+      get().logActivity(`Deleted order: ${order.displayId || orderId}`);
+    } catch (error) {
+      console.error("Failed to delete order:", error);
+    }
+  },
+
+  addOrderNote: async (orderId, noteText) => {
+    try {
+      const order = get().orders.find(o => o.id === orderId);
+      if (!order) return;
+
+      const note = {
+        text: noteText,
+        createdAt: new Date().toISOString(),
+        createdBy: get().currentUser?.name || 'System'
+      };
+      const updatedNotes = order.notes ? [...order.notes, note] : [note];
+      const orderRef = doc(db, 'orders', orderId);
+      await updateDoc(orderRef, { notes: updatedNotes });
+      get().logActivity(`Added internal note to order ${order.displayId || orderId}`);
+    } catch (error) {
+      console.error("Failed to add order note:", error);
+    }
   }
 }))
 
