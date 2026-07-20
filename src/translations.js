@@ -126,7 +126,8 @@ export const translations = {
     internalNotes: "Internal Notes",
     addNote: "Add Note",
     notePlaceholder: "Type an internal note...",
-    noNotes: "No notes added yet."
+    noNotes: "No notes added yet.",
+    deleteNote: "Delete Note"
   },
   ar: {
     dashboard: "لوحة القيادة",
@@ -255,6 +256,7 @@ export const translations = {
     internalNotes: "ملاحظات داخلية",
     addNote: "إضافة ملاحظة",
     notePlaceholder: "اكتب ملاحظة داخلية...",
-    noNotes: "لا توجد ملاحظات مضافة بعد."
+    noNotes: "لا توجد ملاحظات مضافة بعد.",
+    deleteNote: "حذف الملاحظة"
   }
 };

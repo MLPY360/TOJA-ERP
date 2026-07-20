@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, PackageX, Download, MessageCircle, Pencil, AlertCircle, Check, Trash2 } from 'lucide-react';
+import { Search, PackageX, Download, MessageCircle, Pencil, AlertCircle, Check, Trash2, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
 import ExportOrdersModal from './ExportOrdersModal';
@@ -87,7 +87,7 @@ const ReturnReasonBlock = ({ order }) => {
 };
 
 const OrderNotesBlock = ({ order }) => {
-  const { addOrderNote, language } = useStore();
+  const { addOrderNote, deleteOrderNote, language } = useStore();
   const t = translations[language];
   const [newNote, setNewNote] = useState('');
 
@@ -118,12 +118,20 @@ const OrderNotesBlock = ({ order }) => {
           <p className="text-xs text-slate-400 italic text-start">{t.noNotes}</p>
         ) : (
           order.notes.map((note, index) => (
-            <div key={index} className="bg-white rounded-lg p-2.5 border border-slate-100 shadow-sm text-start">
+            <div key={index} className="bg-white rounded-lg p-2.5 border border-slate-100 shadow-sm text-start relative group">
               <div className="flex justify-between items-center gap-2 mb-1 flex-wrap">
                 <span className="text-[11px] font-bold text-[#181E1C]">{note.createdBy}</span>
                 <span className="text-[9px] text-slate-400 font-medium">{formatNoteDate(note.createdAt)}</span>
               </div>
-              <p className="text-xs text-slate-600 leading-relaxed break-words font-semibold text-start">{note.text}</p>
+              <p className="text-xs text-slate-600 leading-relaxed break-words font-semibold text-start pr-6">{note.text}</p>
+              <button
+                type="button"
+                onClick={() => deleteOrderNote(order.id, note.createdAt)}
+                className="absolute top-2 right-2 text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 opacity-60 hover:opacity-100"
+                title={t.deleteNote}
+              >
+                <X size={12} />
+              </button>
             </div>
           ))
         )}

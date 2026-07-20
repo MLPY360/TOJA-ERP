@@ -466,6 +466,20 @@ export const useStore = create((set, get) => ({
     } catch (error) {
       console.error("Failed to add order note:", error);
     }
+  },
+
+  deleteOrderNote: async (orderId, noteTimestamp) => {
+    try {
+      const order = get().orders.find(o => o.id === orderId);
+      if (!order || !order.notes) return;
+
+      const updatedNotes = order.notes.filter(note => note.createdAt !== noteTimestamp);
+      const orderRef = doc(db, 'orders', orderId);
+      await updateDoc(orderRef, { notes: updatedNotes });
+      get().logActivity(`Deleted an internal note from order ${order.displayId || orderId}`);
+    } catch (error) {
+      console.error("Failed to delete order note:", error);
+    }
   }
 }))
 
