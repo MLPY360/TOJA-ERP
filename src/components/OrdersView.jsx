@@ -191,10 +191,10 @@ export default function OrdersView() {
     if (newStatus === 'Shipped') {
       const cPhone = order.phone || order.customerDetails?.phone || '';
       const formattedPhone = formatWhatsAppNumber(cPhone);
-      const displayId = order.displayId || order.id;
+      const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
       const shortId = displayId.length > 10 ? displayId.substring(displayId.length - 4) : displayId;
       const cName = order.customerName || order.customerDetails?.firstName || 'العميل';
-      const cTotal = order.total || order.totals?.grandTotal || 0;
+      const cTotal = order.totalAmount || order.total || order.totals?.total || order.totals?.grandTotal || 0;
 
       const message = `أهلاً يا ${cName} 👋\nأوردرك من TOJA طلع مع شركة الشحن وهو في الطريق ليك دلوقتي! 🚚\nرقم الأوردر: ${shortId}\nإجمالي الحساب: ${cTotal} جنيه\nلو في أي استفسار إحنا دايماً معاك.`;
 
@@ -205,7 +205,7 @@ export default function OrdersView() {
 
   const filtered = orders.filter((o) => {
     const q = searchQuery.toLowerCase();
-    const displayId = o.displayId || o.id;
+    const displayId = o.orderId || o.orderNumber || o.customId || o.order_id || o.displayId || o.id;
     const cName = o.customerName || (o.customerDetails ? `${o.customerDetails.firstName} ${o.customerDetails.lastName}` : '');
     const cPhone = o.phone || o.customerDetails?.phone || '';
     return displayId.toLowerCase().includes(q) ||
@@ -272,11 +272,13 @@ export default function OrdersView() {
               </tr>
             ) : (
               filtered.map((order, index) => {
+                console.log("Raw Admin Order Data:", order);
                 const cName = order.customerName || (order.customerDetails ? `${order.customerDetails.firstName} ${order.customerDetails.lastName}` : 'Unknown');
                 const cPhone = order.phone || order.customerDetails?.phone || '';
                 const cCity = order.governorate || order.customerDetails?.city || 'Unknown';
                 const cAddress = order.address || order.customerDetails?.address || '';
-                const cTotal = order.total ?? order.totals?.grandTotal ?? 0;
+                const cTotal = order.totalAmount || order.total || order.totals?.total || order.totals?.grandTotal || 0;
+                const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
                 const cShipping = order.shippingFee ?? order.totals?.shipping ?? 0;
 
                 return (
@@ -288,7 +290,7 @@ export default function OrdersView() {
                       className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors"
                     >
                       <td className="p-4 px-6 align-middle text-start">
-                        <p className="font-extrabold text-[#181E1C]">{order.displayId || order.id}</p>
+                        <p className="font-extrabold text-[#181E1C]">{displayId}</p>
                         <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{formatDate(order.createdAt)}</p>
                       </td>
 
@@ -343,8 +345,8 @@ export default function OrdersView() {
                       </td>
 
                       <td className="p-4 align-middle text-start">
-                        <p className="font-black text-[#597867]">{cTotal.toLocaleString('en-EG')} EGP</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5 font-medium whitespace-nowrap">{t.incShipping} {cShipping} EGP</p>
+                        <p className="font-bold text-[#597867]">{cTotal} EGP</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Shipping: {cShipping} EGP</p>
                       </td>
 
                       <td className="p-4 align-middle text-center">
@@ -444,13 +446,13 @@ export default function OrdersView() {
           </div>
         ) : (
           filtered.map((order) => {
-            const displayId = order.displayId || order.id;
+            const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
             const itemsCount = order.items?.reduce((sum, item) => sum + (item.qty || item.quantity || 1), 0) || 0;
             const cName = order.customerName || (order.customerDetails ? `${order.customerDetails.firstName} ${order.customerDetails.lastName}` : 'Unknown');
             const cPhone = order.phone || order.customerDetails?.phone || '';
             const cCity = order.governorate || order.customerDetails?.city || 'Unknown';
             const cAddress = order.address || order.customerDetails?.address || '';
-            const cTotal = order.total ?? order.totals?.grandTotal ?? 0;
+            const cTotal = order.totalAmount || order.total || order.totals?.total || order.totals?.grandTotal || 0;
             const cShipping = order.shippingFee ?? order.totals?.shipping ?? 0;
 
             return (
@@ -493,8 +495,8 @@ export default function OrdersView() {
                     </div>
                   </div>
                   <div className="text-end">
-                    <p className="font-black text-[#597867]">{cTotal.toLocaleString('en-EG')} EGP</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{t.incShipping} {cShipping} EGP</p>
+                    <p className="font-bold text-[#597867]">{cTotal} EGP</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Shipping: {cShipping} EGP</p>
                   </div>
                 </div>
 
