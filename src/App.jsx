@@ -35,6 +35,7 @@ export default function App() {
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [editProduct, setEditProduct] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const metrics = useMemo(() => {
     let totalInStock = 0;
@@ -172,8 +173,13 @@ export default function App() {
         </div>
 
         {/* Glassmorphism Wrapper */}
-        <div className="relative z-10 flex h-full w-full bg-white/40 backdrop-blur-2xl pb-[72px] md:pb-0">
-          <aside className="hidden md:flex relative transition duration-200 ease-in-out bg-[#181E1C] w-64 text-white flex-shrink-0 flex-col justify-between z-50">
+        <div className="relative z-10 flex h-full w-full bg-white/40 backdrop-blur-2xl pb-0">
+          {/* Sidebar Overlay for Mobile */}
+          {isMobileMenuOpen && (
+            <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setIsMobileMenuOpen(false)} />
+          )}
+
+          <aside className={`fixed inset-y-0 left-0 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition-transform duration-300 ease-in-out bg-[#181E1C] w-64 text-white flex-shrink-0 flex flex-col justify-between z-50`}>
             <div>
               <div className="flex items-center gap-3.5 px-6 py-8">
                 <img src="/logo.png" alt="TOJA" className="h-8 w-auto object-contain invert brightness-0" />
@@ -186,19 +192,19 @@ export default function App() {
               </div>
               <nav className="mt-4 px-4 flex flex-col gap-2">
                 <div
-                  onClick={() => setActiveTab('dashboard')}
+                  onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }}
                   className={`px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-semibold cursor-pointer transition-colors ${activeTab === 'dashboard' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
                 >
                   <LayoutDashboard size={18} strokeWidth={2} /> {t.dashboard}
                 </div>
                 <div
-                  onClick={() => setActiveTab('orders')}
+                  onClick={() => { setActiveTab('orders'); setIsMobileMenuOpen(false); }}
                   className={`px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-semibold cursor-pointer transition-colors ${activeTab === 'orders' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
                 >
                   <Package size={18} strokeWidth={2} /> {t.orders}
                 </div>
                 <div
-                  onClick={() => setActiveTab('finance')}
+                  onClick={() => { setActiveTab('finance'); setIsMobileMenuOpen(false); }}
                   className={`px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-semibold cursor-pointer transition-colors ${activeTab === 'finance' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
                 >
                   <Wallet size={18} strokeWidth={2} /> {t.finance || 'Finance'}
@@ -219,10 +225,13 @@ export default function App() {
           </aside>
 
           <main className="flex-1 h-full overflow-y-auto">
-            <div className="min-h-full p-4 sm:p-8 md:p-12 pb-24 md:pb-12">
+            <div className="min-h-full p-4 sm:p-8 md:p-12 pb-6 md:pb-12">
 
               <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
                 <div className="flex items-center gap-4">
+                  <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm min-h-[44px] min-w-[44px] flex items-center justify-center">
+                    <Menu size={20} />
+                  </button>
                   <div>
                     <h1 className="text-3xl font-extrabold text-[#181E1C] tracking-tight">
                       {activeTab === 'dashboard' ? t.dashboard : activeTab === 'orders' ? t.orders : t.finance || 'Finance'}
@@ -304,39 +313,6 @@ export default function App() {
 
             </div>
           </main>
-
-          {/* Mobile Bottom Navigation Bar */}
-          <nav className="md:hidden fixed bottom-0 left-0 w-full bg-[#181E1C] border-t border-white/10 z-50 flex items-center justify-around pb-safe">
-            <div
-              onClick={() => setActiveTab('dashboard')}
-              className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 cursor-pointer transition-colors ${activeTab === 'dashboard' ? 'text-white' : 'text-white/50 hover:text-white/80'}`}
-            >
-              <LayoutDashboard size={20} strokeWidth={2.5} />
-              <span className="text-[10px] font-bold">{t.dashboard}</span>
-            </div>
-            <div
-              onClick={() => setActiveTab('orders')}
-              className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 cursor-pointer transition-colors ${activeTab === 'orders' ? 'text-white' : 'text-white/50 hover:text-white/80'}`}
-            >
-              <Package size={20} strokeWidth={2.5} />
-              <span className="text-[10px] font-bold">{t.orders}</span>
-            </div>
-            <div
-              onClick={() => setActiveTab('finance')}
-              className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 cursor-pointer transition-colors ${activeTab === 'finance' ? 'text-white' : 'text-white/50 hover:text-white/80'}`}
-            >
-              <Wallet size={20} strokeWidth={2.5} />
-              <span className="text-[10px] font-bold">{t.finance || 'Finance'}</span>
-            </div>
-            <div
-              onClick={logout}
-              className="flex-1 flex flex-col items-center justify-center py-3 gap-1 cursor-pointer transition-colors text-red-400 hover:text-red-300"
-            >
-              <LogOut size={20} strokeWidth={2.5} />
-              <span className="text-[10px] font-bold">{t.logout}</span>
-            </div>
-          </nav>
-
         </div>
 
         {showLogs && <ActivityLogs onClose={() => setShowLogs(false)} />}

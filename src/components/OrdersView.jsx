@@ -245,14 +245,14 @@ export default function OrdersView() {
       </div>
 
       {/* Desktop Table */}
-      <div className="hidden md:block overflow-x-auto w-full">
-        <table className="w-full text-start border-collapse whitespace-nowrap">
+      <div className="w-full overflow-x-auto">
+        <table className="w-full min-w-[1000px] text-start border-collapse whitespace-nowrap">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-500 font-bold">
               <th className="p-4 px-6 font-semibold text-start">{t.orderIdDate}</th>
               <th className="p-4 font-semibold text-start">{t.customer}</th>
-              <th className="p-4 font-semibold text-start">{t.location}</th>
-              <th className="p-4 font-semibold text-start">{t.items}</th>
+              <th className="p-4 font-semibold text-start hidden md:table-cell">{t.location}</th>
+              <th className="p-4 font-semibold text-start hidden md:table-cell">{t.items}</th>
               <th className="p-4 font-semibold text-start">{t.totalValue}</th>
               <th className="p-4 font-semibold text-center">{t.status}</th>
               <th className="p-4 font-semibold px-6 text-end">{t.createdBy}</th>
@@ -311,12 +311,12 @@ export default function OrdersView() {
                         </div>
                       </td>
 
-                      <td className="p-4 align-middle text-start">
+                      <td className="p-4 align-middle text-start hidden md:table-cell">
                         <p className="font-semibold text-slate-700">{cCity}</p>
                         <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={cAddress}>{cAddress}</p>
                       </td>
 
-                      <td className="p-4 align-middle text-start">
+                      <td className="p-4 align-middle text-start hidden md:table-cell">
                         <div className="flex flex-col gap-2">
                           {order.items?.map((item, i) => {
                             const product = products.find(p => p.id === item.productId) || item;
@@ -433,150 +433,6 @@ export default function OrdersView() {
         </table>
       </div>
 
-      {/* Mobile Cards */}
-      <div className="md:hidden flex flex-col p-4 gap-4 bg-slate-50 border-t border-slate-100">
-        {filtered.length === 0 ? (
-          <div className="p-8 text-center bg-white rounded-2xl shadow-sm border border-slate-100">
-            <div className="flex flex-col items-center gap-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-                <PackageX size={24} className="text-slate-400" />
-              </div>
-              <p className="text-[13px] font-semibold text-slate-500">{t.noOrders}</p>
-            </div>
-          </div>
-        ) : (
-          filtered.map((order) => {
-            const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
-            const itemsCount = order.items?.reduce((sum, item) => sum + (item.qty || item.quantity || 1), 0) || 0;
-            const cName = order.customerName || (order.customerDetails ? `${order.customerDetails.firstName} ${order.customerDetails.lastName}` : 'Unknown');
-            const cPhone = order.phone || order.customerDetails?.phone || '';
-            const cCity = order.governorate || order.customerDetails?.city || 'Unknown';
-            const cAddress = order.address || order.customerDetails?.address || '';
-            const cTotal = order.totalAmount || order.total || order.totals?.total || order.totals?.grandTotal || 0;
-            const cShipping = order.shippingFee ?? order.totals?.shipping ?? 0;
-
-            return (
-              <div key={order.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col gap-4">
-                <div className="flex justify-between items-start border-b border-slate-100 pb-3">
-                  <div className="flex items-start gap-2">
-                    <div>
-                      <h3 className="font-extrabold text-[#181E1C]">{displayId}</h3>
-                      <p className="text-[11px] text-slate-400 font-medium mt-0.5">{formatDate(order.createdAt)} · {itemsCount} items</p>
-                    </div>
-                    <div className="flex items-center gap-1 -mt-2">
-                      <button
-                        onClick={() => toggleNotes(order.id)}
-                        className={`relative p-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center ${activeNotesOrderIds[order.id] ? 'bg-slate-100 text-slate-700' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
-                        title={t.internalNotes}
-                      >
-                        <MessageCircle size={16} />
-                        {order.notes && order.notes.length > 0 && (
-                          <span className="absolute top-1.5 right-1.5 bg-[#597867] text-white text-[9px] font-black rounded-full h-4 w-4 flex items-center justify-center border border-white shadow-sm">
-                            {order.notes.length}
-                          </span>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => { setOrderToEdit(order); setIsEditModalOpen(true); }}
-                        className="text-slate-400 hover:text-blue-500 transition-colors p-2 rounded-lg hover:bg-blue-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
-                        title={t.editOrder}
-                      >
-                        <Pencil size={16} />
-                      </button>
-
-                      <button
-                        onClick={() => setOrderToDelete(order)}
-                        className="text-slate-400 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
-                        title={t.deleteOrder}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="text-end">
-                    <p className="font-bold text-[#597867]">{cTotal} EGP</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Shipping: {cShipping} EGP</p>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <p className="font-bold text-[#181E1C]">{cName}</p>
-                    <button
-                      onClick={() => {
-                        const formattedPhone = formatWhatsAppNumber(cPhone);
-                        window.open(`https://wa.me/${formattedPhone}`, '_blank');
-                      }}
-                      className="text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-colors"
-                    >
-                      <MessageCircle size={14} /> <span className="text-[11px] font-bold">{cPhone}</span>
-                    </button>
-                  </div>
-                  <p className="text-xs text-slate-500 font-medium">{cCity} - {cAddress}</p>
-                </div>
-
-                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 flex flex-col gap-2">
-                  {order.items?.map((item, i) => {
-                    const product = products.find(p => p.id === item.productId) || item;
-                    return (
-                      <div key={i} className="flex items-center gap-3 bg-white p-2 rounded-lg border border-slate-100">
-                        {product?.imageUrl || product?.image ? (
-                          <img
-                            src={product?.imageUrl || product?.image}
-                            alt={product?.name}
-                            className="w-10 h-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-                            onClick={() => setLightboxImg(product?.imageUrl || product?.image)}
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
-                            <PackageX size={16} className="text-slate-400" />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-slate-700 truncate">{product?.name || 'Unknown Product'}</p>
-                          <p className="text-[10px] text-slate-500 font-medium mt-0.5">{product?.sku || '---'}</p>
-                        </div>
-                        <div className="text-end shrink-0">
-                          <p className="text-[11px] font-bold text-[#597867]">{item.size}</p>
-                          <p className="text-[10px] font-medium text-slate-500">Qty: {item.qty || item.quantity}</p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                <div className="pt-1">
-                  <select
-                    value={order.status}
-                    onChange={(e) => handleStatusChange(order, e.target.value)}
-                    className={`w-full h-11 text-sm font-bold px-4 rounded-xl border outline-none appearance-none text-center ${getStatusBadge(order.status)}`}
-                    style={{ textAlignLast: 'center' }}
-                  >
-                    <option value="Pending" className="text-slate-700 bg-white">{t.pending}</option>
-                    <option value="Shipped" className="text-slate-700 bg-white">{t.shipped}</option>
-                    {order.status === 'Delivered' && (
-                      <option value="Delivered" className="text-slate-700 bg-white">{t.delivered}</option>
-                    )}
-                    <option value="Delivered - Pending Cash" className="text-slate-700 bg-white">{t.deliveredPendingCash}</option>
-                    <option value="Delivered - Collected" className="text-slate-700 bg-white">{t.deliveredCollected}</option>
-                    <option value="Returned" className="text-slate-700 bg-white">{t.returned}</option>
-                    <option value="Cancelled" className="text-slate-700 bg-white">{t.cancelled}</option>
-                  </select>
-                  {activeNotesOrderIds[order.id] && (
-                    <div className="mt-3">
-                      <OrderNotesBlock order={order} />
-                    </div>
-                  )}
-                  {order.status === 'Returned' && (
-                    <ReturnReasonBlock order={order} />
-                  )}
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
       <ExportOrdersModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} />
       <EditOrderModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} orderToEdit={orderToEdit} />
       <ImageLightbox isOpen={!!lightboxImg} imageUrl={lightboxImg} onClose={() => setLightboxImg(null)} />

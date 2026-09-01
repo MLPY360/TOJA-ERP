@@ -57,7 +57,7 @@ export default function InventoryTable({ onEdit }) {
       </div>
 
       {/* Desktop Table */}
-      <div className="hidden md:block overflow-x-auto w-full">
+      <div className="hidden md:block w-full overflow-x-auto">
         <table className="w-full text-start border-collapse whitespace-nowrap">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-500 font-bold">
@@ -115,8 +115,8 @@ export default function InventoryTable({ onEdit }) {
                           </div>
                         )}
                         <div>
-                          <p className="font-bold text-[#181E1C] whitespace-nowrap">{product.name}</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide">{product.sku}</p>
+                          <p className="font-bold text-[#181E1C] truncate max-w-[150px] lg:max-w-[250px]" title={product.name}>{product.name}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide truncate max-w-[150px]" title={product.sku}>{product.sku}</p>
                         </div>
                       </div>
                     </td>
@@ -212,7 +212,7 @@ export default function InventoryTable({ onEdit }) {
         </table>
       </div>
 
-      {/* Mobile Cards */}
+      {/* Mobile Card List */}
       <div className="md:hidden flex flex-col p-4 gap-4 bg-slate-50 border-t border-slate-100">
         {filtered.length === 0 ? (
           <div className="p-8 text-center bg-white rounded-2xl shadow-sm border border-slate-100">
@@ -228,46 +228,87 @@ export default function InventoryTable({ onEdit }) {
             const totalInitial = getSum(product.initialStock);
             const totalSold = getSum(product.sold);
             const currentStock = totalInitial - totalSold;
+            const profitPerItem = product.sellingPrice - product.costPrice;
+            const totalProfit = totalSold * profitPerItem;
+            const sizes = ['M', 'L', 'XL', 'XXL'];
+
             return (
-              <div key={product.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col gap-3">
+              <div key={product.id} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex flex-col">
+                {/* Card Header */}
                 <div className="flex justify-between items-start gap-3">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0">
                     {product.imageUrl ? (
                       <img 
                         src={product.imageUrl} 
-                        alt={product.name} 
-                        className="w-14 h-14 object-cover rounded-xl border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
-                        onClick={() => setLightboxImg(product.imageUrl)}
+                        alt={product.name}
+                        className="w-12 h-12 rounded-full object-cover border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
+                        onClick={() => setLightboxImg(product.imageUrl)} 
                       />
                     ) : (
-                      <div className="w-14 h-14 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                      <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
                         <PackageX size={20} className="text-slate-400" />
                       </div>
                     )}
-                    <div className="min-w-0">
-                      <h3 className="font-bold text-[#181E1C] truncate">{product.name}</h3>
-                      <p className="text-xs text-slate-400 font-medium uppercase mt-0.5">{product.sku}</p>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold text-[#181E1C] text-sm truncate">{product.name}</h3>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 truncate">{product.sku}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 shrink-0">
                     {onEdit && (
-                      <button onClick={() => onEdit(product)} className="p-2.5 text-slate-400 hover:text-[#597867] bg-slate-50 rounded-xl transition-colors">
+                      <button onClick={() => onEdit(product)} className="p-2 text-slate-400 hover:text-[#597867] bg-slate-50 hover:bg-[#597867]/10 rounded-xl transition-colors">
                         <Pencil size={16} />
                       </button>
                     )}
-                    <button onClick={() => handleDelete(product.id)} className={`p-2.5 rounded-xl transition-colors ${deleteConfirmId === product.id ? 'bg-red-500 text-white' : 'text-slate-400 hover:text-red-500 bg-slate-50'}`}>
+                    <button onClick={() => handleDelete(product.id)} className={`p-2 rounded-xl transition-colors ${deleteConfirmId === product.id ? 'bg-red-500 text-white' : 'text-slate-400 hover:text-red-500 bg-slate-50 hover:bg-red-50'}`}>
                       <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3 mt-2">
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                    <p className="text-[10px] uppercase font-bold text-slate-500 mb-1 tracking-wider">{t.totalInStock}</p>
-                    <p className="font-black text-[#181E1C] text-lg">{currentStock}</p>
+
+                <hr className="border-slate-100 my-4" />
+
+                {/* Stock Section */}
+                <div>
+                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Stock per Size</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {sizes.map(size => {
+                      const sizeInitial = product.initialStock?.[size] || 0;
+                      const sizeSold = product.sold?.[size] || 0;
+                      const sizeStock = sizeInitial - sizeSold;
+                      if (sizeInitial === 0) return null;
+                      return (
+                        <div key={size} className="bg-slate-50 rounded-lg p-2 flex flex-col items-center justify-center border border-slate-100">
+                          <span className="text-[10px] font-bold text-slate-500 mb-0.5">{size}</span>
+                          <span className="text-xs font-black text-[#181E1C]">{sizeStock}</span>
+                        </div>
+                      )
+                    })}
                   </div>
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                    <p className="text-[10px] uppercase font-bold text-slate-500 mb-1 tracking-wider">{t.price}</p>
-                    <p className="font-bold text-[#597867] text-sm mt-1">{formatEGP(product.sellingPrice)}</p>
+                  <div className="mt-3 flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+                    <span className="text-[11px] font-bold text-slate-500">Total Stock</span>
+                    <span className="text-sm font-black text-[#181E1C]">{currentStock}</span>
+                  </div>
+                </div>
+
+                <hr className="border-slate-100 my-4" />
+
+                {/* Pricing Section */}
+                <div>
+                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Prices (EGP)</p>
+                  <div className="grid grid-cols-3 gap-2 text-center bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <div className="flex flex-col border-r border-slate-200">
+                      <span className="text-[10px] font-bold text-slate-500 mb-0.5">Cost</span>
+                      <span className="text-xs font-bold text-[#181E1C]">{product.costPrice}</span>
+                    </div>
+                    <div className="flex flex-col border-r border-slate-200">
+                      <span className="text-[10px] font-bold text-slate-500 mb-0.5">Sell Price</span>
+                      <span className="text-xs font-bold text-[#181E1C]">{product.sellingPrice}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-bold text-slate-500 mb-0.5">Profit</span>
+                      <span className="text-xs font-black text-emerald-500">{totalProfit}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -275,6 +316,8 @@ export default function InventoryTable({ onEdit }) {
           })
         )}
       </div>
+
+
       <ImageLightbox isOpen={!!lightboxImg} imageUrl={lightboxImg} onClose={() => setLightboxImg(null)} />
     </div>
   );
