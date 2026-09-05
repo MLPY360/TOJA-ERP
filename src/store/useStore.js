@@ -14,6 +14,112 @@ export const normalizePhone = (phone) => {
   return cleaned;
 };
 
+export const calculateBatchCapitalMetrics = (products = [], orders = [], expenses = []) => {
+  let totalProductionCost = 0;
+  let totalBatchUnits = 0;
+  let remainingStockUnits = 0;
+  let remainingStockCostValue = 0;
+  let remainingStockRetailValue = 0;
+  let totalPotentialRevenue = 0;
+
+  (products || []).forEach(p => {
+    const costPrice = Number(p.costPrice) || 0;
+    const sellingPrice = Number(p.sellingPrice) || 0;
+
+    // Initial units across all sizes
+    const initialStockObj = p.initialStock || {};
+    const productInitialUnits = Object.values(initialStockObj).reduce((sum, v) => sum + (Number(v) || 0), 0);
+
+    // Sold units across all sizes
+    const soldObj = p.sold || {};
+    const productSoldUnits = Object.values(soldObj).reduce((sum, v) => sum + (Number(v) || 0), 0);
+
+    // Remaining units
+    const productRemainingUnits = Math.max(0, productInitialUnits - productSoldUnits);
+
+    totalBatchUnits += productInitialUnits;
+    totalProductionCost += productInitialUnits * costPrice;
+    totalPotentialRevenue += productInitialUnits * sellingPrice;
+
+    remainingStockUnits += productRemainingUnits;
+    remainingStockCostValue += productRemainingUnits * costPrice;
+    remainingStockRetailValue += productRemainingUnits * sellingPrice;
+  });
+
+  // Operating & other expenses
+  const totalOperatingExpenses = (expenses || []).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+
+  // Net collected revenue from delivered orders (Delivered - Collected or Delivered)
+  let netCollectedRevenue = 0;
+  let pendingCourierRevenue = 0;
+  let deliveredOrdersCount = 0;
+
+  (orders || []).forEach(order => {
+    if (order.isDeleted) return; // Skip soft-deleted orders
+    const isDeliveredCollected = order.status === 'Delivered - Collected' || order.status === 'Delivered';
+    const isPendingCash = order.status === 'Delivered - Pending Cash';
+
+    if (isDeliveredCollected || isPendingCash) {
+      let itemsRevenue = 0;
+      (order.items || []).forEach(item => {
+        const p = (products || []).find(prod => prod.id === item.productId);
+        const qty = Number(item.qty || item.quantity) || 1;
+        const sellPrice = Number(item.unitPrice ?? p?.sellingPrice ?? 0);
+        itemsRevenue += sellPrice * qty;
+      });
+      const discountAmt = Number(order.discount?.amount || 0);
+      const netOrderRevenue = Math.max(0, itemsRevenue - discountAmt);
+
+      if (isDeliveredCollected) {
+        netCollectedRevenue += netOrderRevenue;
+        deliveredOrdersCount += 1;
+      } else if (isPendingCash) {
+        pendingCourierRevenue += netOrderRevenue;
+      }
+    }
+  });
+
+  // Total Capital Required for Break-Even (Production Cost + Operating Expenses)
+  const totalCapitalRequired = totalProductionCost + totalOperatingExpenses;
+
+  // Recovery % (clamped at 100 for progress bar, and raw percentage)
+  const rawRecoveryPct = totalCapitalRequired > 0 
+    ? (netCollectedRevenue / totalCapitalRequired) * 100 
+    : (netCollectedRevenue > 0 ? 100 : 0);
+  const recoveryProgressPct = Math.min(100, Math.max(0, rawRecoveryPct));
+
+  // Remaining Capital to Break-Even: max(0, totalCapitalRequired - netCollectedRevenue)
+  const remainingToBreakEven = Math.max(0, totalCapitalRequired - netCollectedRevenue);
+
+  // Pure Net Profit Zone: max(0, netCollectedRevenue - totalCapitalRequired)
+  const pureNetProfit = Math.max(0, netCollectedRevenue - totalCapitalRequired);
+
+  // Projected Total Profit on Batch Sell-Out: Total Potential Revenue - Total Production Cost - Total Expenses
+  const projectedTotalProfit = totalPotentialRevenue - totalProductionCost - totalOperatingExpenses;
+
+  const isPureProfitZone = netCollectedRevenue >= totalCapitalRequired && totalCapitalRequired > 0;
+
+  return {
+    totalProductionCost,
+    totalBatchUnits,
+    totalOperatingExpenses,
+    totalCapitalRequired,
+    netCollectedRevenue,
+    pendingCourierRevenue,
+    deliveredOrdersCount,
+    rawRecoveryPct,
+    recoveryProgressPct,
+    remainingToBreakEven,
+    pureNetProfit,
+    remainingStockUnits,
+    remainingStockCostValue,
+    remainingStockRetailValue,
+    totalPotentialRevenue,
+    projectedTotalProfit,
+    isPureProfitZone
+  };
+};
+
 const STORAGE_KEY = 'toja-inventory-v2-auth'
 
 function loadLocalData() {
@@ -942,6 +1048,11 @@ export const useStore = create((set, get) => ({
       console.error("Failed to reconcile courier settlement:", error);
       return { success: false, error };
     }
+  },
+
+  getBatchCapitalMetrics: () => {
+    const { products, orders, expenses } = get();
+    return calculateBatchCapitalMetrics(products, orders, expenses);
   }
 }))
 

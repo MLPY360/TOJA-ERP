@@ -426,6 +426,181 @@ test('Dynamic Size Variants supports arbitrary apparel configurations', () => {
 });
 
 // =============================================================
+// 4. BATCH CAPITAL RECOVERY & INVENTORY INVESTMENT MODULE
+// =============================================================
+console.log('\n--- 4. BATCH CAPITAL RECOVERY & INVENTORY INVESTMENT ---');
+
+test('Batch Capital Recovery calculates manufacturing cost, recovered cash, and recovery %', () => {
+  const products = [
+    {
+      id: 'p1',
+      name: 'Heavyweight Hoodie',
+      costPrice: 200,
+      sellingPrice: 500,
+      initialStock: { M: 100, L: 100 }, // 200 units
+      sold: { M: 50, L: 30 }             // 80 sold, 120 remaining
+    },
+    {
+      id: 'p2',
+      name: 'Cargo Sweatpants',
+      costPrice: 150,
+      sellingPrice: 400,
+      initialStock: { M: 50, L: 50 },  // 100 units
+      sold: { M: 20, L: 10 }            // 30 sold, 70 remaining
+    }
+  ];
+
+  const expenses = [
+    { category: 'Ads', amount: 15000 },
+    { category: 'Packaging', amount: 5000 }
+  ]; // 20,000 EGP total expenses
+
+  // Delivered orders (Collected)
+  const orders = [
+    {
+      id: 'ord-1',
+      status: 'Delivered - Collected',
+      items: [
+        { productId: 'p1', qty: 50, unitPrice: 500 }, // 25,000 EGP
+        { productId: 'p2', qty: 20, unitPrice: 400 }  // 8,000 EGP
+      ],
+      discount: { amount: 1000 } // Net = 32,000 EGP
+    },
+    {
+      id: 'ord-2',
+      status: 'Delivered',
+      items: [
+        { productId: 'p1', qty: 30, unitPrice: 500 }, // 15,000 EGP
+        { productId: 'p2', qty: 10, unitPrice: 400 }  // 4,000 EGP
+      ],
+      discount: { amount: 0 } // Net = 19,000 EGP
+    },
+    {
+      id: 'ord-3',
+      status: 'Pending',
+      items: [{ productId: 'p1', qty: 5, unitPrice: 500 }] // Not delivered, should not count towards collected
+    }
+  ];
+
+  // 1. Total Batch Production Cost:
+  // p1: 200 units * 200 = 40,000 EGP
+  // p2: 100 units * 150 = 15,000 EGP
+  // Total = 55,000 EGP. Total units = 300.
+  const totalProductionCost = products.reduce((sum, p) => {
+    const units = Object.values(p.initialStock).reduce((a, b) => a + b, 0);
+    return sum + (units * p.costPrice);
+  }, 0);
+  assert.strictEqual(totalProductionCost, 55000, 'Total batch production cost should be 55,000 EGP');
+
+  // 2. Total Capital Recovered to Date:
+  // ord-1: 32,000 EGP, ord-2: 19,000 EGP => 51,000 EGP
+  let netCollectedRevenue = 0;
+  orders.forEach(o => {
+    if (o.status === 'Delivered - Collected' || o.status === 'Delivered') {
+      const itemsSum = o.items.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
+      netCollectedRevenue += (itemsSum - (o.discount?.amount || 0));
+    }
+  });
+  assert.strictEqual(netCollectedRevenue, 51000, 'Net collected revenue should be 51,000 EGP');
+
+  // 3. Total Capital Required for Break-Even:
+  // 55,000 (production) + 20,000 (expenses) = 75,000 EGP
+  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalCapitalRequired = totalProductionCost + totalExpenses;
+  assert.strictEqual(totalCapitalRequired, 75000, 'Total capital required should be 75,000 EGP');
+
+  // 4. Break-Even & Capital Recovery Progress %:
+  // (51,000 / 75,000) * 100 = 68.0%
+  const recoveryPct = (netCollectedRevenue / totalCapitalRequired) * 100;
+  assert.strictEqual(recoveryPct.toFixed(1), '68.0', 'Recovery progress should be 68.0%');
+
+  // 5. Remaining Capital to Break-Even:
+  // 75,000 - 51,000 = 24,000 EGP
+  const remainingToBreakEven = Math.max(0, totalCapitalRequired - netCollectedRevenue);
+  assert.strictEqual(remainingToBreakEven, 24000, 'Remaining to break even should be 24,000 EGP');
+
+  // 6. Pure Net Profit (currently in recovery phase):
+  const pureNetProfit = Math.max(0, netCollectedRevenue - totalCapitalRequired);
+  assert.strictEqual(pureNetProfit, 0, 'Pure net profit should be 0 EGP during recovery phase');
+
+  // Status check
+  assert.strictEqual(netCollectedRevenue < totalCapitalRequired, true, 'Should trigger Capital Recovery Phase (⏳) badge');
+});
+
+test('Pure Net Profit Zone triggers when cash collected exceeds total invested capital', () => {
+  const totalProductionCost = 55000;
+  const totalExpenses = 20000;
+  const totalCapitalRequired = totalProductionCost + totalExpenses; // 75,000 EGP
+  const netCollectedRevenue = 95000; // Exceeded break-even!
+
+  const rawRecoveryPct = (netCollectedRevenue / totalCapitalRequired) * 100; // 126.67%
+  const clampedProgressPct = Math.min(100, rawRecoveryPct); // 100%
+  const remainingToBreakEven = Math.max(0, totalCapitalRequired - netCollectedRevenue); // 0
+  const pureNetProfit = Math.max(0, netCollectedRevenue - totalCapitalRequired); // 20,000 EGP
+  const isPureProfitZone = netCollectedRevenue >= totalCapitalRequired;
+
+  assert.strictEqual(rawRecoveryPct.toFixed(1), '126.7');
+  assert.strictEqual(clampedProgressPct, 100, 'Progress bar width is clamped at 100%');
+  assert.strictEqual(remainingToBreakEven, 0, 'No remaining capital deficit');
+  assert.strictEqual(pureNetProfit, 20000, 'Pure profit zone has 20,000 EGP surplus');
+  assert.strictEqual(isPureProfitZone, true, 'Should trigger Pure Profit Zone (🚀) glowing badge');
+});
+
+test('Remaining Unsold Inventory Value (Cost vs Retail) and Projected Final Batch Profit', () => {
+  const products = [
+    {
+      costPrice: 200,
+      sellingPrice: 500,
+      initialStock: { M: 100, L: 100 }, // 200 units (100,000 retail, 40,000 cost)
+      sold: { M: 50, L: 30 }             // 80 sold => 120 units remaining
+    },
+    {
+      costPrice: 150,
+      sellingPrice: 400,
+      initialStock: { M: 50, L: 50 },  // 100 units (40,000 retail, 15,000 cost)
+      sold: { M: 20, L: 10 }            // 30 sold => 70 units remaining
+    }
+  ];
+  const totalExpenses = 20000;
+
+  // Remaining units:
+  // p1: 120 units remaining. Value at cost = 120 * 200 = 24,000 EGP. Value at retail = 120 * 500 = 60,000 EGP.
+  // p2: 70 units remaining. Value at cost = 70 * 150 = 10,500 EGP. Value at retail = 70 * 400 = 28,000 EGP.
+  let remainingUnits = 0;
+  let remainingCostValue = 0;
+  let remainingRetailValue = 0;
+  let totalPotentialRevenue = 0;
+  let totalProductionCost = 0;
+
+  products.forEach(p => {
+    const init = Object.values(p.initialStock).reduce((a, b) => a + b, 0);
+    const sold = Object.values(p.sold).reduce((a, b) => a + b, 0);
+    const rem = init - sold;
+
+    remainingUnits += rem;
+    remainingCostValue += rem * p.costPrice;
+    remainingRetailValue += rem * p.sellingPrice;
+    totalPotentialRevenue += init * p.sellingPrice;
+    totalProductionCost += init * p.costPrice;
+  });
+
+  assert.strictEqual(remainingUnits, 190, 'Total remaining warehouse stock should be 190 units');
+  assert.strictEqual(remainingCostValue, 34500, 'Remaining stock value at cost should be 34,500 EGP');
+  assert.strictEqual(remainingRetailValue, 88000, 'Remaining stock value at retail should be 88,000 EGP');
+
+  // Total Potential Revenue from all initial stock:
+  // p1: 200 * 500 = 100,000 EGP
+  // p2: 100 * 400 = 40,000 EGP
+  // Total Potential Revenue = 140,000 EGP.
+  assert.strictEqual(totalPotentialRevenue, 140000, 'Total batch potential revenue should be 140,000 EGP');
+
+  // Projected Final Net Profit upon full sell-out:
+  // Total Potential Revenue (140,000) - Total Production Cost (55,000) - Total Expenses (20,000) = 65,000 EGP
+  const projectedTotalProfit = totalPotentialRevenue - totalProductionCost - totalExpenses;
+  assert.strictEqual(projectedTotalProfit, 65000, 'Projected profit on full sell-out should be 65,000 EGP');
+});
+
+// =============================================================
 // SUMMARY REPORT
 // =============================================================
 console.log('\n================================================================');

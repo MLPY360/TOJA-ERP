@@ -3,10 +3,10 @@ import { motion } from 'framer-motion';
 import {
   Plus, Trash2, Wallet, DollarSign, Calendar, Tag, Search, FileText,
   Users, Download, UploadCloud, CheckCircle2, AlertTriangle, RefreshCw, FileSpreadsheet,
-  Target, TrendingUp
+  Target, TrendingUp, Factory, Package, ShieldAlert, Sparkles, ChevronDown, ChevronUp, Layers
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { useStore } from '../store/useStore';
+import { useStore, calculateBatchCapitalMetrics } from '../store/useStore';
 import { translations } from '../translations';
 import SettlementReportModal from './SettlementReportModal';
 
@@ -16,11 +16,13 @@ export default function FinanceView() {
     products, orders,
     partners, addPartner, updatePartner, deletePartner,
     withdrawals, addWithdrawal, deleteWithdrawal,
-    bulkReconcileCourier
+    bulkReconcileCourier,
+    userRole
   } = useStore();
   const t = translations[language];
 
   const [activeTab, setActiveTab] = useState('expenses'); // 'expenses' | 'unit_economics' | 'partners' | 'reconciliation'
+  const [isBatchSummaryOpen, setIsBatchSummaryOpen] = useState(true);
 
   // Expenses State
   const [isAddingExpense, setIsAddingExpense] = useState(false);
@@ -181,6 +183,11 @@ export default function FinanceView() {
       }, 3500);
     }
   };
+
+  // --- Batch Capital Recovery Calculations ---
+  const batchMetrics = useMemo(() => {
+    return calculateBatchCapitalMetrics(products, orders, expenses);
+  }, [products, orders, expenses]);
 
   // --- Calculations ---
   const totalExpensesSum = expenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
@@ -398,8 +405,358 @@ export default function FinanceView() {
     setWithdrawalPartnerId('');
   };
 
+  // RBAC Access Guard: Hide financial breakdown and costs from Operations
+  if (userRole === 'operations') {
+    return (
+      <div className="bg-white rounded-2xl p-8 border border-slate-100 shadow-sm text-center flex flex-col items-center justify-center min-h-[350px]">
+        <div className="p-4 rounded-full bg-amber-500/10 text-amber-600 mb-4">
+          <ShieldAlert size={40} />
+        </div>
+        <h3 className="text-xl font-bold text-slate-800 mb-2">{t.accessRestricted || 'Access Restricted'}</h3>
+        <p className="text-sm text-slate-500 max-w-md">
+          {t.financeOpsRestricted || 'Financial metrics and cost calculations are restricted to Admin and Finance roles.'}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
+
+      {/* ── BATCH CAPITAL RECOVERY & INVENTORY INVESTMENT INTELLIGENCE MODULE ── */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white rounded-2xl p-5 sm:p-7 shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-slate-100 overflow-hidden relative"
+      >
+        {/* Subtle decorative glow in background */}
+        <div className={`absolute top-0 end-0 w-96 h-96 rounded-full blur-3xl -z-0 pointer-events-none opacity-40 ${
+          batchMetrics.isPureProfitZone ? 'bg-emerald-100' : 'bg-amber-100'
+        }`} />
+
+        <div className="relative z-10 flex flex-col gap-6">
+          {/* Header & Status Badge */}
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className={`p-2.5 rounded-xl shrink-0 ${batchMetrics.isPureProfitZone ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'}`}>
+                {batchMetrics.isPureProfitZone ? <Sparkles size={22} strokeWidth={2.5} /> : <Target size={22} strokeWidth={2.5} />}
+              </div>
+              <div>
+                <h2 className="text-base sm:text-xl font-black text-[#181E1C] flex items-center gap-2">
+                  {t.batchCapitalRecovery || 'Batch Capital Recovery & Inventory Investment'}
+                </h2>
+                <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5">
+                  {t.batchCapitalRecoveryDesc || 'Real-time capital break-even progress, recovered cash, and warehouse asset valuation.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Prominent Status Badge */}
+            <div className="self-start md:self-auto">
+              {batchMetrics.isPureProfitZone ? (
+                <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/20 font-bold text-xs sm:text-sm">
+                  <span className="text-base">🚀</span>
+                  <span>{t.pureProfitZone || 'Pure Profit Zone'}</span>
+                  <span className="bg-white/20 px-2 py-0.5 rounded-md font-black">
+                    +{batchMetrics.pureNetProfit.toLocaleString('en-EG')} EGP
+                  </span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 font-bold text-xs sm:text-sm shadow-sm">
+                  <span className="text-base">⏳</span>
+                  <span>{t.capitalRecoveryPhase || 'Capital Recovery Phase'}</span>
+                  <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md font-black">
+                    {batchMetrics.remainingToBreakEven.toLocaleString('en-EG')} EGP {t.toBreakEvenRemaining || 'remaining'}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Prominent Capital Recovery Progress Bar */}
+          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 sm:p-5 flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold text-slate-600">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-slate-500">{t.capitalRecoveryProgress || 'Capital Recovery Progress'}:</span>
+                <span className={`text-base font-black ${batchMetrics.isPureProfitZone ? 'text-emerald-600' : 'text-[#181E1C]'}`}>
+                  {batchMetrics.rawRecoveryPct.toFixed(1)}%
+                </span>
+                {batchMetrics.isPureProfitZone && (
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md">
+                    {t.breakEvenTargetAchieved || '100% Capital Recovered!'}
+                  </span>
+                )}
+              </div>
+              <div className="text-slate-500 text-xs">
+                <span className="font-extrabold text-[#181E1C]">{batchMetrics.netCollectedRevenue.toLocaleString('en-EG')} EGP</span>
+                {' / '}
+                <span>{batchMetrics.totalCapitalRequired.toLocaleString('en-EG')} EGP ({t.totalCapitalRequired || 'Target'})</span>
+              </div>
+            </div>
+
+            {/* Progress Track */}
+            <div className="relative w-full h-4 bg-slate-200 rounded-full overflow-hidden p-0.5">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${batchMetrics.recoveryProgressPct}%` }}
+                transition={{ duration: 1.2, ease: "easeOut" }}
+                className={`h-full rounded-full transition-all ${
+                  batchMetrics.isPureProfitZone 
+                    ? 'bg-gradient-to-r from-teal-500 to-emerald-500 shadow-sm' 
+                    : 'bg-gradient-to-r from-amber-400 to-[#597867]'
+                }`}
+              />
+            </div>
+
+            {/* Milestone Markers */}
+            <div className="flex justify-between items-center text-[10px] sm:text-[11px] font-bold text-slate-400 px-1">
+              <span>0%</span>
+              <span>25%</span>
+              <span>50%</span>
+              <span>75%</span>
+              <span className="font-extrabold text-slate-700">100% {t.remainingToBreakEven || 'Break-Even'}</span>
+            </div>
+          </div>
+
+          {/* 4 Hero Metric Cards in Dedicated Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: Total Batch Production Cost */}
+            <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-[0_1px_4px_rgba(0,0,0,0.02)] flex flex-col justify-between hover:border-slate-200 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  {t.totalBatchProductionCost || 'Total Inventory Cost'}
+                </span>
+                <div className="p-2 rounded-lg bg-blue-500/10 text-blue-600">
+                  <Factory size={16} />
+                </div>
+              </div>
+              <div className="mt-3">
+                <p className="text-xl sm:text-2xl font-black text-[#181E1C]">
+                  {batchMetrics.totalProductionCost.toLocaleString('en-EG')} <span className="text-xs font-semibold text-slate-400">EGP</span>
+                </p>
+                <p className="text-[11px] font-medium text-slate-500 mt-1 flex items-center gap-1">
+                  <Package size={12} className="text-slate-400" />
+                  <span>{batchMetrics.totalBatchUnits.toLocaleString()} {t.unitsManufactured || 'units produced'}</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Card 2: Cash Collected */}
+            <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-[0_1px_4px_rgba(0,0,0,0.02)] flex flex-col justify-between hover:border-slate-200 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  {t.cashCollectedDelivered || 'Cash Collected'}
+                </span>
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600">
+                  <Wallet size={16} />
+                </div>
+              </div>
+              <div className="mt-3">
+                <p className="text-xl sm:text-2xl font-black text-emerald-600">
+                  {batchMetrics.netCollectedRevenue.toLocaleString('en-EG')} <span className="text-xs font-semibold text-slate-400">EGP</span>
+                </p>
+                <p className="text-[11px] font-medium text-slate-500 mt-1 flex items-center gap-1">
+                  <CheckCircle2 size={12} className="text-emerald-500" />
+                  <span>{batchMetrics.deliveredOrdersCount} {t.deliveredOrdersCount || 'delivered orders'}</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Card 3: Remaining to Break-Even / Pure Net Profit */}
+            <div className={`border rounded-xl p-4 shadow-[0_1px_4px_rgba(0,0,0,0.02)] flex flex-col justify-between transition-all ${
+              batchMetrics.isPureProfitZone 
+                ? 'bg-emerald-50/50 border-emerald-200' 
+                : 'bg-amber-50/50 border-amber-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                  {batchMetrics.isPureProfitZone 
+                    ? (t.pureNetProfitMade || 'Pure Net Profit') 
+                    : (t.remainingToBreakEven || 'Remaining to Break-Even')}
+                </span>
+                <div className={`p-2 rounded-lg ${batchMetrics.isPureProfitZone ? 'bg-emerald-500 text-white' : 'bg-amber-500/10 text-amber-600'}`}>
+                  {batchMetrics.isPureProfitZone ? <Sparkles size={16} /> : <Target size={16} />}
+                </div>
+              </div>
+              <div className="mt-3">
+                <p className={`text-xl sm:text-2xl font-black ${batchMetrics.isPureProfitZone ? 'text-emerald-700' : 'text-amber-800'}`}>
+                  {(batchMetrics.isPureProfitZone ? batchMetrics.pureNetProfit : batchMetrics.remainingToBreakEven).toLocaleString('en-EG')} <span className="text-xs font-semibold text-slate-400">EGP</span>
+                </p>
+                <p className="text-[11px] font-medium text-slate-500 mt-1">
+                  {batchMetrics.isPureProfitZone 
+                    ? (t.breakEvenTargetAchieved || 'Operating in pure profit zone') 
+                    : `${batchMetrics.remainingToBreakEven.toLocaleString('en-EG')} EGP ${t.toBreakEvenRemaining || 'to break even'}`}
+                </p>
+              </div>
+            </div>
+
+            {/* Card 4: Remaining Warehouse Stock Value */}
+            <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-[0_1px_4px_rgba(0,0,0,0.02)] flex flex-col justify-between hover:border-slate-200 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  {t.remainingWarehouseStockCost || 'Warehouse Stock'}
+                </span>
+                <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-600">
+                  <Package size={16} />
+                </div>
+              </div>
+              <div className="mt-3">
+                <p className="text-xl sm:text-2xl font-black text-[#181E1C]">
+                  {batchMetrics.remainingStockCostValue.toLocaleString('en-EG')} <span className="text-xs font-semibold text-slate-400">{t.costValue || 'Cost'}</span>
+                </p>
+                <div className="mt-1 flex items-center justify-between text-[11px] font-medium text-slate-500 flex-wrap gap-1">
+                  <span>{t.retailValue || 'Retail'}: <strong className="text-slate-800">{batchMetrics.remainingStockRetailValue.toLocaleString('en-EG')} EGP</strong></span>
+                  <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-600">
+                    {batchMetrics.remainingStockUnits} {t.unitsInStock || 'units'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Batch Financial Summary Waterfall & Projections Card */}
+          <div className="bg-slate-50/70 border border-slate-100 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsBatchSummaryOpen(!isBatchSummaryOpen)}
+              className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100/80 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Layers size={15} className="text-[#597867]" />
+                <span>{t.batchFinancialSummary || 'Batch Capital Cycle Summary'}</span>
+                <span className="text-[11px] font-normal text-slate-400 hidden sm:inline">
+                  ({t.financialWaterfall || 'Capital Recovery Waterfall & Projections'})
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-slate-500 text-xs font-semibold">
+                <span>{isBatchSummaryOpen ? (t.hideBatchSummary || 'Hide') : (t.viewBatchSummary || 'View')}</span>
+                {isBatchSummaryOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </div>
+            </button>
+
+            {isBatchSummaryOpen && (
+              <div className="p-4 sm:p-5 border-t border-slate-100 flex flex-col gap-4">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-start">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-400 text-[11px] font-bold uppercase tracking-wider">
+                        <th className="pb-2 text-start">{t.description || 'Metric / Step'}</th>
+                        <th className="pb-2 text-end">{t.amount || 'Amount (EGP)'}</th>
+                        <th className="pb-2 text-end">{t.status || 'Impact / Notes'}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                      {/* 1. Batch Production Cost */}
+                      <tr>
+                        <td className="py-2.5 text-start font-bold flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 inline-flex items-center justify-center text-[10px] font-black">1</span>
+                          {t.totalBatchProductionCost || 'Batch Production Cost (Manufactured)'}
+                        </td>
+                        <td className="py-2.5 text-end font-mono font-bold text-slate-800">
+                          {batchMetrics.totalProductionCost.toLocaleString('en-EG')} EGP
+                        </td>
+                        <td className="py-2.5 text-end text-slate-500">
+                          {batchMetrics.totalBatchUnits} {t.unitsManufactured || 'units manufactured'}
+                        </td>
+                      </tr>
+
+                      {/* 2. Total Operating Expenses */}
+                      <tr>
+                        <td className="py-2.5 text-start font-bold flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-purple-100 text-purple-700 inline-flex items-center justify-center text-[10px] font-black">2</span>
+                          {t.operatingAndAdExpenses || 'Operating, Marketing & Other Expenses'}
+                        </td>
+                        <td className="py-2.5 text-end font-mono font-bold text-purple-700">
+                          + {batchMetrics.totalOperatingExpenses.toLocaleString('en-EG')} EGP
+                        </td>
+                        <td className="py-2.5 text-end text-slate-500">
+                          {expenses.length} {t.expenseTracker || 'expenses'}
+                        </td>
+                      </tr>
+
+                      {/* 3. Total Capital Required */}
+                      <tr className="bg-slate-100/60 font-bold">
+                        <td className="py-2.5 px-2 text-start text-[#181E1C] flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-800 inline-flex items-center justify-center text-[10px] font-black">3</span>
+                          {t.totalCapitalRequired || 'Total Capital Required for Break-Even'}
+                        </td>
+                        <td className="py-2.5 px-2 text-end font-mono text-[#181E1C] font-black">
+                          = {batchMetrics.totalCapitalRequired.toLocaleString('en-EG')} EGP
+                        </td>
+                        <td className="py-2.5 px-2 text-end text-slate-600">
+                          {t.remainingToBreakEven || 'Break-even target'}
+                        </td>
+                      </tr>
+
+                      {/* 4. Recovered Cash to Date */}
+                      <tr>
+                        <td className="py-2.5 text-start font-bold flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 inline-flex items-center justify-center text-[10px] font-black">4</span>
+                          {t.actualCollectedRevenue || 'Actual Net Collected Revenue'}
+                        </td>
+                        <td className="py-2.5 text-end font-mono font-bold text-emerald-600">
+                          - {batchMetrics.netCollectedRevenue.toLocaleString('en-EG')} EGP
+                        </td>
+                        <td className="py-2.5 text-end text-emerald-600 font-bold">
+                          {batchMetrics.rawRecoveryPct.toFixed(1)}% {t.capitalRecoveryProgress || 'recovered'}
+                        </td>
+                      </tr>
+
+                      {/* 5. Net Capital Status */}
+                      <tr className={batchMetrics.isPureProfitZone ? 'bg-emerald-50 text-emerald-900 font-bold' : 'bg-amber-50 text-amber-900 font-bold'}>
+                        <td className="py-2.5 px-2 text-start flex items-center gap-2">
+                          <span className={`w-5 h-5 rounded-full inline-flex items-center justify-center text-[10px] font-black ${
+                            batchMetrics.isPureProfitZone ? 'bg-emerald-200 text-emerald-800' : 'bg-amber-200 text-amber-800'
+                          }`}>5</span>
+                          {t.netCapitalStatus || 'Net Capital Status'}
+                        </td>
+                        <td className="py-2.5 px-2 text-end font-mono font-black text-sm">
+                          {batchMetrics.isPureProfitZone ? (
+                            `+ ${batchMetrics.pureNetProfit.toLocaleString('en-EG')} EGP (${t.pureProfitZone || 'Pure Profit'})`
+                          ) : (
+                            `- ${batchMetrics.remainingToBreakEven.toLocaleString('en-EG')} EGP (${t.remainingToBreakEven || 'Deficit to Break-Even'})`
+                          )}
+                        </td>
+                        <td className="py-2.5 px-2 text-end">
+                          {batchMetrics.isPureProfitZone ? '🚀 ' + (t.pureProfitZone || 'Pure Profit Zone') : '⏳ ' + (t.capitalRecoveryPhase || 'Recovery Phase')}
+                        </td>
+                      </tr>
+
+                      {/* 6. Remaining Unsold Warehouse Asset */}
+                      <tr>
+                        <td className="py-2.5 text-start font-bold flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 inline-flex items-center justify-center text-[10px] font-black">6</span>
+                          {t.remainingWarehouseStockCost || 'Remaining Warehouse Stock (Asset)'}
+                        </td>
+                        <td className="py-2.5 text-end font-mono font-bold text-indigo-700">
+                          {batchMetrics.remainingStockCostValue.toLocaleString('en-EG')} EGP <span className="text-[10px] text-slate-500">({t.costValue || 'Cost'})</span>
+                        </td>
+                        <td className="py-2.5 text-end text-slate-600">
+                          {batchMetrics.remainingStockUnits} {t.unitsInStock || 'units'} · {batchMetrics.remainingStockRetailValue.toLocaleString('en-EG')} EGP {t.retailValue || 'retail'}
+                        </td>
+                      </tr>
+
+                      {/* 7. Projected Profit on Full Sell-Out */}
+                      <tr className="border-t-2 border-slate-300 bg-slate-900 text-white font-bold">
+                        <td className="py-3 px-3 text-start flex items-center gap-2">
+                          <TrendingUp size={16} className="text-emerald-400" />
+                          <span>{t.projectedFinalNetProfit || 'Projected Total Profit on Batch Sell-Out'}</span>
+                        </td>
+                        <td className="py-3 px-3 text-end font-mono font-black text-sm text-emerald-400">
+                          {batchMetrics.projectedTotalProfit.toLocaleString('en-EG')} EGP
+                        </td>
+                        <td className="py-3 px-3 text-end text-[11px] text-slate-300">
+                          {t.potentialRetailValue || 'Full Retail'} ({batchMetrics.totalPotentialRevenue.toLocaleString('en-EG')} EGP) - Cost & Expenses
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </motion.div>
 
       {/* Top Tabs */}
       <div className="flex items-center gap-2 p-1.5 bg-slate-200/50 rounded-xl w-full sm:w-max flex-wrap">

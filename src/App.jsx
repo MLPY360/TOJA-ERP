@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Download, ClipboardList, LogOut, Package, BarChart3, LayoutDashboard, Menu, Globe, Wallet, ShieldAlert, Users } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { useStore } from './store/useStore';
+import { useStore, calculateBatchCapitalMetrics } from './store/useStore';
 import { translations } from './translations';
 import LoginModal from './components/LoginModal';
 import ActivityLogs from './components/ActivityLogs';
@@ -110,7 +110,9 @@ export default function App() {
     const avgProfitMarginPerItem = products.length > 0 ? (sumProfitMargin / products.length) : 0;
     const breakEvenPoint = avgProfitMarginPerItem > 0 ? Math.ceil(totalExpensesSum / avgProfitMarginPerItem) : 0;
 
-    return { totalInStock, totalSoldUnits, totalRevenue, totalProfit, cashWithShipping, cashInTreasury, returnLosses, avgMargin, totalExpensesSum, deliveredItemsSold, breakEvenPoint };
+    const batchMetrics = calculateBatchCapitalMetrics(products, orders, expenses);
+
+    return { totalInStock, totalSoldUnits, totalRevenue, totalProfit, cashWithShipping, cashInTreasury, returnLosses, avgMargin, totalExpensesSum, deliveredItemsSold, breakEvenPoint, batchMetrics };
   }, [products, orders, expenses]);
 
   const handleEdit = (product) => {
