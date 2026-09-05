@@ -73,8 +73,11 @@ export default function App() {
           deliveredItemsSold += itemQty;
         });
 
-        totalRevenue += itemsRevenue;
-        totalProfit += (itemsRevenue - orderCost);
+        const discountAmt = Number(order.discount?.amount || 0);
+        const netItemsRevenue = Math.max(0, itemsRevenue - discountAmt);
+
+        totalRevenue += netItemsRevenue;
+        totalProfit += (netItemsRevenue - orderCost);
 
         // قراءة إجمالي الأوردر بالطريقتين
         const orderTotal = order.total ?? order.totals?.grandTotal ?? 0;

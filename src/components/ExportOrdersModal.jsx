@@ -60,6 +60,10 @@ export default function ExportOrdersModal({ isOpen, onClose }) {
           "Size": item.size,
           "Quantity": item.qty,
           "Item Total (EGP)": product ? (product.sellingPrice * item.qty) : 0,
+          "Subtotal (EGP)": order.subtotal || 0,
+          "Discount Type": order.discount?.type || 'None',
+          "Discount Value": order.discount?.value || 0,
+          "Discount Amount (EGP)": order.discount?.amount || 0,
           "Order Total (EGP)": order.total,
           "Shipping Fee (EGP)": order.shippingFee || 0,
           "Status": order.status

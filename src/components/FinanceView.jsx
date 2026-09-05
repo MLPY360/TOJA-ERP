@@ -58,7 +58,9 @@ export default function FinanceView() {
             itemsRevenue += product.sellingPrice * itemQty;
           }
         });
-        totalProfit += (itemsRevenue - orderCost);
+        const discountAmt = Number(order.discount?.amount || 0);
+        const netItemsRevenue = Math.max(0, itemsRevenue - discountAmt);
+        totalProfit += (netItemsRevenue - orderCost);
       } else if (order.status === 'Returned') {
         // قراءة مصاريف الشحن بالطريقتين لتفادي الإيرور
         returnLosses += Number(order.shippingFee ?? order.totals?.shipping ?? 0);

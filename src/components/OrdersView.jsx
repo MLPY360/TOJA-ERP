@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, PackageX, Download, MessageCircle, Pencil, AlertCircle, Check, Trash2, X } from 'lucide-react';
+import { Search, PackageX, Download, MessageCircle, Pencil, AlertCircle, Check, Trash2, X, Tag, FileText } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
 import ExportOrdersModal from './ExportOrdersModal';
 import EditOrderModal from './EditOrderModal';
+import OrderInvoiceModal from './OrderInvoiceModal';
 import ImageLightbox from './ImageLightbox';
 
 const getStatusBadge = (status) => {
@@ -165,6 +166,7 @@ export default function OrdersView() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [orderToEdit, setOrderToEdit] = useState(null);
+  const [invoiceOrder, setInvoiceOrder] = useState(null);
   const [lightboxImg, setLightboxImg] = useState(null);
   const [activeNotesOrderIds, setActiveNotesOrderIds] = useState({});
   const [orderToDelete, setOrderToDelete] = useState(null);
@@ -290,7 +292,14 @@ export default function OrdersView() {
                       className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors"
                     >
                       <td className="p-4 px-6 align-middle text-start">
-                        <p className="font-extrabold text-[#181E1C]">{displayId}</p>
+                        <button
+                          type="button"
+                          onClick={() => setInvoiceOrder(order)}
+                          className="font-extrabold text-[#181E1C] hover:text-[#597867] hover:underline transition-colors text-start cursor-pointer"
+                          title={t.orderDetails}
+                        >
+                          {displayId}
+                        </button>
                         <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{formatDate(order.createdAt)}</p>
                       </td>
 
@@ -345,8 +354,15 @@ export default function OrdersView() {
                       </td>
 
                       <td className="p-4 align-middle text-start">
-                        <p className="font-bold text-[#597867]">{cTotal} EGP</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">Shipping: {cShipping} EGP</p>
+                        <p className="font-bold text-[#597867]">{cTotal.toLocaleString('en-EG')} EGP</p>
+                        <div className="flex flex-col gap-0.5 mt-0.5">
+                          <p className="text-[10px] text-slate-500">Shipping: {cShipping} EGP</p>
+                          {order.discount?.amount > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200/80 px-1.5 py-0.5 rounded w-fit">
+                              <Tag size={9} /> -{Number(order.discount.amount).toLocaleString('en-EG')} EGP ({order.discount.type === 'percentage' ? `${order.discount.value}%` : 'Fixed'})
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="p-4 align-middle text-center">
@@ -372,6 +388,14 @@ export default function OrdersView() {
                         <div className="flex items-center justify-end gap-2">
                           <span className="text-xs font-semibold text-slate-500 hidden lg:inline">{order.createdBy || 'Website'}</span>
                           
+                          <button
+                            onClick={() => setInvoiceOrder(order)}
+                            className="text-slate-400 hover:text-[#597867] transition-colors p-2 rounded-lg hover:bg-emerald-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                            title={t.orderDetails}
+                          >
+                            <FileText size={16} />
+                          </button>
+
                           <button
                             onClick={() => toggleNotes(order.id)}
                             className={`relative p-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center ${activeNotesOrderIds[order.id] ? 'bg-slate-100 text-slate-700' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
@@ -435,6 +459,7 @@ export default function OrdersView() {
 
       <ExportOrdersModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} />
       <EditOrderModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} orderToEdit={orderToEdit} />
+      <OrderInvoiceModal isOpen={!!invoiceOrder} onClose={() => setInvoiceOrder(null)} order={invoiceOrder} />
       <ImageLightbox isOpen={!!lightboxImg} imageUrl={lightboxImg} onClose={() => setLightboxImg(null)} />
 
       {orderToDelete && (

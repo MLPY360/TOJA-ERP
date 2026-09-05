@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, Tag, Percent } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
 
@@ -16,6 +16,10 @@ export default function AddOrderModal({ isOpen, onClose }) {
   
   const [items, setItems] = useState([{ productId: '', size: 'M', qty: 1 }]);
 
+  // Discount state: type ('percentage' | 'fixed') and value
+  const [discountType, setDiscountType] = useState('percentage');
+  const [discountValue, setDiscountValue] = useState('');
+
   const subtotal = useMemo(() => {
     return items.reduce((sum, item) => {
       const product = products.find(p => p.id === item.productId);
@@ -26,9 +30,48 @@ export default function AddOrderModal({ isOpen, onClose }) {
     }, 0);
   }, [items, products]);
 
-  const total = subtotal + (Number(shippingFee) || 0);
+  const discountAmount = useMemo(() => {
+    const rawVal = parseFloat(discountValue) || 0;
+    if (rawVal <= 0 || subtotal <= 0) return 0;
+    if (discountType === 'percentage') {
+      const clampedPct = Math.min(100, Math.max(0, rawVal));
+      return Math.round(((subtotal * clampedPct) / 100) * 100) / 100;
+    }
+    // Fixed amount cannot exceed subtotal
+    return Math.min(subtotal, Math.max(0, rawVal));
+  }, [subtotal, discountType, discountValue]);
+
+  const total = Math.max(0, subtotal - discountAmount + (Number(shippingFee) || 0));
 
   if (!isOpen) return null;
+
+  const handleDiscountValueChange = (val) => {
+    if (val === '') {
+      setDiscountValue('');
+      return;
+    }
+    const num = parseFloat(val);
+    if (isNaN(num)) return;
+    if (num < 0) {
+      setDiscountValue('0');
+      return;
+    }
+    if (discountType === 'percentage') {
+      if (num > 100) {
+        setDiscountValue('100');
+        return;
+      }
+    }
+    setDiscountValue(val);
+  };
+
+  const handleDiscountTypeChange = (newType) => {
+    setDiscountType(newType);
+    // If switching to percentage and value > 100, clamp it
+    if (newType === 'percentage' && parseFloat(discountValue) > 100) {
+      setDiscountValue('100');
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -47,6 +90,11 @@ export default function AddOrderModal({ isOpen, onClose }) {
       items: validItems,
       shippingFee: Number(shippingFee) || 0,
       subtotal,
+      discount: {
+        type: discountType,
+        value: Number(discountValue) || 0,
+        amount: discountAmount
+      },
       total
     };
 
@@ -58,6 +106,8 @@ export default function AddOrderModal({ isOpen, onClose }) {
     setGovernorate('');
     setAddress('');
     setShippingFee('');
+    setDiscountType('percentage');
+    setDiscountValue('');
     setItems([{ productId: '', size: 'M', qty: 1 }]);
     
     onClose();
@@ -160,22 +210,110 @@ export default function AddOrderModal({ isOpen, onClose }) {
                 </div>
               </div>
 
+              {/* Discount Section */}
+              <div className="border-t border-slate-100 pt-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-[#597867]/10 text-[#597867] rounded-lg">
+                      <Tag size={15} />
+                    </div>
+                    <h3 className="text-sm font-extrabold text-[#181E1C] text-start">{t.discount}</h3>
+                  </div>
+                  {discountAmount > 0 && (
+                    <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                      -{discountAmount.toLocaleString('en-EG')} EGP
+                    </span>
+                  )}
+                </div>
+
+                <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  {/* Type Selector */}
+                  <div className="flex items-center bg-white p-1 rounded-lg border border-slate-200 shadow-sm shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleDiscountTypeChange('percentage')}
+                      className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                        discountType === 'percentage'
+                          ? 'bg-[#597867] text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Percent size={13} /> {t.percentage}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDiscountTypeChange('fixed')}
+                      className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                        discountType === 'fixed'
+                          ? 'bg-[#597867] text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>EGP</span> {t.fixedAmount}
+                    </button>
+                  </div>
+
+                  {/* Value Input */}
+                  <div className="flex-1 relative">
+                    <input
+                      type="number"
+                      min="0"
+                      max={discountType === 'percentage' ? "100" : undefined}
+                      step="any"
+                      value={discountValue}
+                      onChange={(e) => handleDiscountValueChange(e.target.value)}
+                      placeholder={discountType === 'percentage' ? "0%" : "0 EGP"}
+                      className="w-full h-10 px-3 pe-10 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] focus:ring-2 focus:ring-[#597867]/10 text-start"
+                    />
+                    <span className="absolute end-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">
+                      {discountType === 'percentage' ? '%' : 'EGP'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Financial Breakdown Section */}
               <div className="border-t border-slate-100 pt-6">
                 <h3 className="text-sm font-extrabold text-[#181E1C] mb-4 text-start">{t.financials}</h3>
                 <div className="flex flex-col gap-3">
+                  {/* Subtotal */}
                   <div className="flex justify-between items-center text-sm">
-                    <span className="font-semibold text-slate-500">{t.subtotalItems}</span>
+                    <span className="font-semibold text-slate-500">{t.subtotal}</span>
                     <span className="font-bold text-[#181E1C]">{subtotal.toLocaleString('en-EG')} EGP</span>
                   </div>
+
+                  {/* Discount Applied */}
+                  {discountAmount > 0 && (
+                    <div className="flex justify-between items-center text-sm">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-amber-700">{t.discountApplied}</span>
+                        <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          {discountType === 'percentage' ? `${discountValue}%` : 'EGP'}
+                        </span>
+                      </div>
+                      <span className="font-bold text-amber-700">-{discountAmount.toLocaleString('en-EG')} EGP</span>
+                    </div>
+                  )}
+
+                  {/* Shipping Fee */}
                   <div className="flex justify-between items-center text-sm">
-                    <span className="font-semibold text-slate-500">{t.shippingFees}</span>
+                    <span className="font-semibold text-slate-500">{t.shippingCost}</span>
                     <div className="flex items-center gap-2">
-                      <input type="number" min="0" required value={shippingFee} onChange={e => setShippingFee(e.target.value)} placeholder="0" className="w-24 h-8 px-2 text-start rounded border border-slate-200 bg-slate-50 text-sm outline-none focus:border-[#597867]" />
+                      <input
+                        type="number"
+                        min="0"
+                        value={shippingFee}
+                        onChange={e => setShippingFee(e.target.value)}
+                        placeholder="0"
+                        className="w-24 h-8 px-2 text-start rounded border border-slate-200 bg-slate-50 text-sm outline-none focus:border-[#597867]"
+                      />
                       <span className="font-bold text-slate-500">EGP</span>
                     </div>
                   </div>
+
+                  {/* Final Total */}
                   <div className="flex justify-between items-center pt-3 border-t border-slate-100 mt-1">
-                    <span className="font-extrabold text-[#181E1C]">{t.totalOrderValue}</span>
+                    <span className="font-extrabold text-[#181E1C]">{t.finalTotal}</span>
                     <span className="text-lg font-black text-[#597867]">{total.toLocaleString('en-EG')} EGP</span>
                   </div>
                 </div>
