@@ -1,7 +1,18 @@
 import { create } from 'zustand'
-import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, getDoc } from 'firebase/firestore'
+import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, getDoc, setDoc } from 'firebase/firestore'
 import { db, auth } from '../firebase'
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth'
+
+export const normalizePhone = (phone) => {
+  if (!phone) return '';
+  let cleaned = phone.toString().replace(/\D/g, '');
+  if (cleaned.startsWith('0020')) cleaned = cleaned.slice(4);
+  else if (cleaned.startsWith('20')) cleaned = cleaned.slice(2);
+  while (cleaned.startsWith('0')) {
+    cleaned = cleaned.slice(1);
+  }
+  return cleaned;
+};
 
 const STORAGE_KEY = 'toja-inventory-v2-auth'
 
@@ -32,6 +43,8 @@ export const useStore = create((set, get) => ({
   products: [],
   activityLogs: [],
   orders: [],
+  deletedOrders: [],
+  blacklist: [],
   expenses: [],
   partners: [],
   withdrawals: [],
@@ -76,8 +89,15 @@ export const useStore = create((set, get) => ({
     });
 
     onSnapshot(query(collection(db, "orders"), orderBy("createdAt", "desc")), (snapshot) => {
-      const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      set({ orders });
+      const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const orders = allOrders.filter(o => !o.isDeleted);
+      const deletedOrders = allOrders.filter(o => !!o.isDeleted);
+      set({ orders, deletedOrders });
+    });
+
+    onSnapshot(collection(db, "blacklist"), (snapshot) => {
+      const blacklist = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      set({ blacklist });
     });
 
     onSnapshot(query(collection(db, "activityLogs"), orderBy("timestamp", "desc")), (snapshot) => {
@@ -421,11 +441,11 @@ export const useStore = create((set, get) => ({
 
   deleteOrder: async (orderId) => {
     try {
-      const order = get().orders.find(o => o.id === orderId);
+      const order = [...get().orders, ...(get().deletedOrders || [])].find(o => o.id === orderId);
       if (!order) return;
 
       const isRestocked = order.status === 'Cancelled' || order.status === 'Returned';
-      if (!isRestocked) {
+      if (!isRestocked && order.items) {
         for (const item of order.items) {
           const productId = item.productId || item.id;
           if (!productId) continue;
@@ -442,10 +462,74 @@ export const useStore = create((set, get) => ({
         }
       }
 
-      await deleteDoc(doc(db, "orders", orderId));
-      get().logActivity(`Deleted order: ${order.displayId || orderId}`);
+      const orderRef = doc(db, "orders", orderId);
+      await updateDoc(orderRef, {
+        isDeleted: true,
+        deletedAt: new Date().toISOString(),
+        deletedBy: get().currentUser?.name || 'System'
+      });
+      get().logActivity(`Soft-deleted order: ${order.displayId || orderId} (Inventory restored)`);
     } catch (error) {
-      console.error("Failed to delete order:", error);
+      console.error("Failed to soft-delete order:", error);
+    }
+  },
+
+  restoreOrder: async (orderId) => {
+    try {
+      const order = [...get().orders, ...(get().deletedOrders || [])].find(o => o.id === orderId);
+      if (!order) return;
+
+      const isActive = order.status !== 'Cancelled' && order.status !== 'Returned';
+      if (isActive && order.items) {
+        for (const item of order.items) {
+          const productId = item.productId || item.id;
+          if (!productId) continue;
+
+          const productRef = doc(db, 'products', productId);
+          const productSnap = await getDoc(productRef);
+          if (productSnap.exists()) {
+            const data = productSnap.data();
+            const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
+            const qty = Number(item.qty) || Number(item.quantity) || 1;
+            const newSold = { ...currentSold, [item.size]: (currentSold[item.size] || 0) + qty };
+            await updateDoc(productRef, { sold: newSold });
+          }
+        }
+      }
+
+      const orderRef = doc(db, "orders", orderId);
+      await updateDoc(orderRef, {
+        isDeleted: false,
+        restoredAt: new Date().toISOString(),
+        restoredBy: get().currentUser?.name || 'System'
+      });
+      get().logActivity(`Restored order: ${order.displayId || orderId} (Inventory re-allocated)`);
+    } catch (error) {
+      console.error("Failed to restore order:", error);
+    }
+  },
+
+  toggleBlacklistCustomer: async ({ phone, customerName, reason, isBlacklisted }) => {
+    try {
+      const cleanPhone = normalizePhone(phone);
+      if (!cleanPhone) return;
+
+      if (isBlacklisted) {
+        await setDoc(doc(db, "blacklist", cleanPhone), {
+          phone: cleanPhone,
+          rawPhone: phone,
+          customerName: customerName || '',
+          reason: reason || 'High return risk / Delivery refusal',
+          createdAt: new Date().toISOString(),
+          createdBy: get().currentUser?.name || 'System'
+        });
+        get().logActivity(`Blacklisted customer: ${customerName || cleanPhone} (${cleanPhone})`);
+      } else {
+        await deleteDoc(doc(db, "blacklist", cleanPhone));
+        get().logActivity(`Removed customer from blacklist: ${cleanPhone}`);
+      }
+    } catch (error) {
+      console.error("Failed to toggle blacklist:", error);
     }
   },
 

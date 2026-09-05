@@ -1,7 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Search, PackageX, Download, MessageCircle, Pencil, AlertCircle, Check, Trash2, X, Tag, FileText } from 'lucide-react';
-import { useStore } from '../store/useStore';
+import {
+  Search,
+  PackageX,
+  Download,
+  MessageCircle,
+  Pencil,
+  AlertCircle,
+  Check,
+  Trash2,
+  X,
+  Tag,
+  FileText,
+  RotateCcw,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles
+} from 'lucide-react';
+import { useStore, normalizePhone } from '../store/useStore';
 import { translations } from '../translations';
 import ExportOrdersModal from './ExportOrdersModal';
 import EditOrderModal from './EditOrderModal';
@@ -25,6 +41,41 @@ const formatDate = (dateValue) => {
   if (!dateValue) return 'N/A';
   if (dateValue.toDate) return dateValue.toDate().toLocaleDateString();
   return new Date(dateValue).toLocaleDateString();
+};
+
+const formatWhatsAppNumber = (phone) => {
+  if (!phone) return '';
+  const clean = normalizePhone(phone);
+  return '20' + clean;
+};
+
+const getWhatsAppTemplates = (order, t) => {
+  const cName = order.customerName || order.customerDetails?.firstName || 'العميل';
+  const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
+  const shortId = displayId.length > 10 ? displayId.substring(displayId.length - 4) : displayId;
+  const cTotal = (order.totalAmount || order.total || order.totals?.total || order.totals?.grandTotal || 0).toLocaleString('en-EG');
+  const itemsSummary = (order.items || []).map(i => `${i.size} x${i.qty || i.quantity || 1}`).join(', ');
+
+  return [
+    {
+      id: 'confirmation',
+      title: t.confirmOrderWhatsApp,
+      statusMatch: 'Pending',
+      text: `أهلاً يا ${cName} 👋\nشكرًا لطلبك من TOJA! 🛍️\nرقم الأوردر: ${shortId}\nالمقاسات: ${itemsSummary || 'طلب ملابس'}\nإجمالي الحساب: ${cTotal} ج.م\nيرجى الرد لتأكيد العنوان وبدء تجهيز الشحنة فوراً!`
+    },
+    {
+      id: 'shipped',
+      title: t.dispatchOrderWhatsApp,
+      statusMatch: 'Shipped',
+      text: `أهلاً يا ${cName} 👋\nأوردرك من TOJA طلع مع شركة الشحن وهو في الطريق ليك دلوقتي! 🚚\nرقم الأوردر: ${shortId}\nإجمالي المطلوب عند الاستلام: ${cTotal} ج.م\nالمندوب هيتواصل معاك هاتفياً لتسليم الشحنة.`
+    },
+    {
+      id: 'followup',
+      title: t.followUpWhatsApp,
+      statusMatch: 'Delivered',
+      text: `أهلاً يا ${cName} 👋\nنتمنى تكون شحنتك من TOJA وصلت بسلام وعجبتك! ❤️\nلو المقاس محتاج استبدال أو عندك أي استفسار، إحنا معاك وتحت أمرك في أي وقت.`
+    }
+  ];
 };
 
 const ReturnReasonBlock = ({ order }) => {
@@ -99,32 +150,25 @@ const OrderNotesBlock = ({ order }) => {
     setNewNote('');
   };
 
-  const formatNoteDate = (isoString) => {
-    if (!isoString) return '';
-    const date = new Date(isoString);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const isRtl = language === 'ar';
-
   return (
-    <div className={`my-2 bg-slate-50/80 border border-slate-100 rounded-xl p-4 w-full ${isRtl ? 'text-right' : 'text-left'}`} dir={isRtl ? 'rtl' : 'ltr'}>
-      <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 justify-start">
-        <MessageCircle size={14} className="text-slate-400" /> {t.internalNotes}
-      </h4>
-      
-      {/* Existing Notes list */}
-      <div className="flex flex-col gap-2 max-h-48 overflow-y-auto mb-3 pr-1">
+    <div className="my-2 bg-slate-50 border border-slate-200/80 rounded-xl p-3 w-full flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider text-start">{t.internalNotes}</p>
+        <span className="text-[10px] font-medium text-slate-400">{order.notes?.length || 0} notes</span>
+      </div>
+
+      <div className="flex flex-col gap-2 max-h-40 overflow-y-auto">
         {!order.notes || order.notes.length === 0 ? (
-          <p className="text-xs text-slate-400 italic text-start">{t.noNotes}</p>
+          <p className="text-xs text-slate-400 italic text-start py-1">{t.noNotes}</p>
         ) : (
-          order.notes.map((note, index) => (
-            <div key={index} className="bg-white rounded-lg p-2.5 border border-slate-100 shadow-sm text-start relative group">
-              <div className="flex justify-between items-center gap-2 mb-1 flex-wrap">
-                <span className="text-[11px] font-bold text-[#181E1C]">{note.createdBy}</span>
-                <span className="text-[9px] text-slate-400 font-medium">{formatNoteDate(note.createdAt)}</span>
+          order.notes.map((note, idx) => (
+            <div key={idx} className="bg-white p-2.5 rounded-lg border border-slate-100 shadow-sm flex flex-col gap-1 relative group text-start">
+              <p className="text-xs font-medium text-slate-700 leading-relaxed pr-6">{note.text}</p>
+              <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                <span className="font-semibold text-slate-500">{note.author}</span>
+                <span>•</span>
+                <span>{new Date(note.createdAt).toLocaleString()}</span>
               </div>
-              <p className="text-xs text-slate-600 leading-relaxed break-words font-semibold text-start pr-6">{note.text}</p>
               <button
                 type="button"
                 onClick={() => deleteOrderNote(order.id, note.createdAt)}
@@ -138,7 +182,6 @@ const OrderNotesBlock = ({ order }) => {
         )}
       </div>
 
-      {/* Add Note Form */}
       <form onSubmit={handleAddNote} className="flex gap-2">
         <input
           type="text"
@@ -159,9 +202,219 @@ const OrderNotesBlock = ({ order }) => {
   );
 };
 
-export default function OrdersView() {
-  const { orders, updateOrderStatus, language, products, deleteOrder } = useStore();
+function BlacklistModal({ isOpen, onClose, customer, onToggle, language }) {
   const t = translations[language];
+  const [reason, setReason] = useState(customer?.blacklistRecord?.reason || '');
+
+  React.useEffect(() => {
+    setReason(customer?.blacklistRecord?.reason || '');
+  }, [customer]);
+
+  if (!isOpen || !customer) return null;
+
+  const isBlacklisted = !!customer.blacklistRecord;
+
+  return (
+    <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white w-full max-w-md rounded-2xl p-6 shadow-xl border border-slate-100 flex flex-col gap-4 text-start"
+      >
+        <div className="flex items-start gap-3.5">
+          <div className={`p-3 rounded-xl shrink-0 ${isBlacklisted ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
+            <ShieldAlert size={24} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-base font-extrabold text-slate-900">
+              {isBlacklisted ? t.blacklisted : t.blacklistCustomer}
+            </h3>
+            <p className="text-xs font-semibold text-slate-500 mt-0.5">
+              {customer.name} ({customer.phone})
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg">
+            <X size={18} />
+          </button>
+        </div>
+
+        {isBlacklisted ? (
+          <div className="bg-red-50/70 border border-red-200 rounded-xl p-3.5 text-xs flex flex-col gap-1.5">
+            <p className="font-extrabold text-red-900">{t.highRisk}</p>
+            <p className="text-red-700">
+              {t.blacklistReason}: <span className="font-semibold">{customer.blacklistRecord.reason || 'N/A'}</span>
+            </p>
+            <p className="text-red-600 text-[11px] leading-relaxed">
+              {t.blacklistRecommendation}
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-bold text-slate-600">{t.blacklistReason}</label>
+            <textarea
+              rows={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder={t.blacklistReasonPlaceholder}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-700 outline-none focus:border-red-400 focus:bg-white focus:ring-2 focus:ring-red-400/20 text-start"
+            />
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              {t.blacklistRecommendation}
+            </p>
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+          >
+            {t.cancel || 'Cancel'}
+          </button>
+
+          {isBlacklisted ? (
+            <button
+              type="button"
+              onClick={() => {
+                onToggle({ phone: customer.phone, isBlacklisted: false });
+                onClose();
+              }}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
+            >
+              <ShieldCheck size={15} />
+              {t.removeFromBlacklist}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                onToggle({
+                  phone: customer.phone,
+                  customerName: customer.name,
+                  reason: reason || 'Refused delivery / High risk',
+                  isBlacklisted: true
+                });
+                onClose();
+              }}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-extrabold rounded-xl shadow-sm shadow-red-600/20 transition-colors flex items-center gap-1.5"
+            >
+              <ShieldAlert size={15} />
+              {t.blacklistCustomer}
+            </button>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function WhatsAppModal({ isOpen, onClose, order, language }) {
+  const t = translations[language];
+  if (!isOpen || !order) return null;
+
+  const cPhone = order.phone || order.customerDetails?.phone || '';
+  const formattedPhone = formatWhatsAppNumber(cPhone);
+  const templates = getWhatsAppTemplates(order, t);
+
+  const getIsRecommended = (templateId) => {
+    if (templateId === 'confirmation' && order.status === 'Pending') return true;
+    if (templateId === 'shipped' && order.status === 'Shipped') return true;
+    if (templateId === 'followup' && (order.status === 'Delivered' || order.status === 'Delivered - Collected' || order.status === 'Delivered - Pending Cash')) return true;
+    return false;
+  };
+
+  return (
+    <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white w-full max-w-lg rounded-2xl p-5 sm:p-6 shadow-xl border border-slate-100 flex flex-col gap-4 text-start max-h-[90vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+              <MessageCircle size={22} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900">{t.sendWhatsApp}</h3>
+              <p className="text-xs text-slate-500 font-semibold">{order.customerName || 'Customer'} · {cPhone}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
+            <X size={18} />
+          </button>
+        </div>
+
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t.selectTemplate}</p>
+
+        <div className="flex flex-col gap-3">
+          {templates.map((tpl) => {
+            const isRec = getIsRecommended(tpl.id);
+            return (
+              <div
+                key={tpl.id}
+                className={`p-3.5 rounded-xl border transition-all flex flex-col gap-2 ${
+                  isRec
+                    ? 'border-emerald-500/60 bg-emerald-50/40 ring-2 ring-emerald-500/10'
+                    : 'border-slate-200 bg-slate-50/50 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-800">{tpl.title}</span>
+                  {isRec && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                      <Sparkles size={11} /> {t.recommended}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-600 whitespace-pre-line leading-relaxed bg-white/80 p-2.5 rounded-lg border border-slate-100 font-medium">
+                  {tpl.text}
+                </p>
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const encoded = encodeURIComponent(tpl.text);
+                      window.open(`https://wa.me/${formattedPhone}?text=${encoded}`, '_blank');
+                      onClose();
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-colors shadow-sm ${
+                      isRec
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                    }`}
+                  >
+                    <MessageCircle size={14} />
+                    <span>{t.sendWhatsApp}</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+export default function OrdersView() {
+  const {
+    orders,
+    deletedOrders,
+    updateOrderStatus,
+    language,
+    products,
+    deleteOrder,
+    restoreOrder,
+    blacklist,
+    toggleBlacklistCustomer
+  } = useStore();
+
+  const t = translations[language];
+  const [viewMode, setViewMode] = useState('active'); // 'active' | 'trash'
   const [searchQuery, setSearchQuery] = useState('');
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -170,6 +423,9 @@ export default function OrdersView() {
   const [lightboxImg, setLightboxImg] = useState(null);
   const [activeNotesOrderIds, setActiveNotesOrderIds] = useState({});
   const [orderToDelete, setOrderToDelete] = useState(null);
+  const [orderToRestore, setOrderToRestore] = useState(null);
+  const [whatsAppOrder, setWhatsAppOrder] = useState(null);
+  const [blacklistCustomerModal, setBlacklistCustomerModal] = useState(null);
 
   const toggleNotes = (orderId) => {
     setActiveNotesOrderIds(prev => ({
@@ -178,13 +434,18 @@ export default function OrdersView() {
     }));
   };
 
-  const formatWhatsAppNumber = (phone) => {
-    if (!phone) return '';
-    let cleaned = phone.replace(/\D/g, '');
-    if (cleaned.startsWith('01')) {
-      cleaned = '20' + cleaned.substring(1);
-    }
-    return cleaned;
+  const checkBlacklist = (phone) => {
+    if (!phone || !blacklist) return null;
+    const clean = normalizePhone(phone);
+    if (!clean) return null;
+    return blacklist.find(b => b.phone === clean);
+  };
+
+  const openBlacklistModal = (order) => {
+    const phone = order.phone || order.customerDetails?.phone || '';
+    const name = order.customerName || (order.customerDetails ? `${order.customerDetails.firstName} ${order.customerDetails.lastName}` : 'Customer');
+    const record = checkBlacklist(phone);
+    setBlacklistCustomerModal({ phone, name, blacklistRecord: record });
   };
 
   const handleStatusChange = (order, newStatus) => {
@@ -205,7 +466,9 @@ export default function OrdersView() {
     }
   };
 
-  const filtered = orders.filter((o) => {
+  const currentList = viewMode === 'active' ? orders : (deletedOrders || []);
+
+  const filtered = currentList.filter((o) => {
     const q = searchQuery.toLowerCase();
     const displayId = o.orderId || o.orderNumber || o.customId || o.order_id || o.displayId || o.id;
     const cName = o.customerName || (o.customerDetails ? `${o.customerDetails.firstName} ${o.customerDetails.lastName}` : '');
@@ -217,15 +480,51 @@ export default function OrdersView() {
 
   return (
     <div className="bg-white rounded-2xl shadow-[0_2px_10px_rgba(0,0,0,0.03)] border border-slate-100 overflow-hidden mt-8">
+      {/* Header Bar */}
       <div className="flex flex-col gap-4 border-b border-slate-100 px-4 sm:px-7 py-4 sm:py-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-[13px] font-bold uppercase tracking-[0.08em] text-[#181E1C]">
-            {t.orderManagement}
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-[13px] font-bold uppercase tracking-[0.08em] text-[#181E1C]">
+              {t.orderManagement}
+            </h2>
+            {/* Active / Trash Segmented Switcher */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setViewMode('active')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  viewMode === 'active'
+                    ? 'bg-white text-[#597867] shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>{t.activeOrders}</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${viewMode === 'active' ? 'bg-[#597867]/10 text-[#597867]' : 'bg-slate-200 text-slate-600'}`}>
+                  {orders.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('trash')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  viewMode === 'trash'
+                    ? 'bg-white text-red-600 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Trash2 size={12} />
+                <span>{t.trash}</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${viewMode === 'trash' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-600'}`}>
+                  {(deletedOrders || []).length}
+                </span>
+              </button>
+            </div>
+          </div>
           <p className="mt-1 text-[12px] font-medium text-slate-400">
-            {orders.length} total orders · {filtered.length} shown
+            {currentList.length} total orders · {filtered.length} shown
           </p>
         </div>
+
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="relative flex-1 sm:w-64">
             <Search size={15} strokeWidth={2} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -234,7 +533,7 @@ export default function OrdersView() {
               placeholder={t.searchOrdersPlaceholder}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-[13px] font-medium text-[#181E1C] placeholder:text-slate-400 outline-none transition-all focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/10"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-[13px] font-medium text-[#181E1C] placeholder:text-slate-400 outline-none transition-all focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/10 text-start"
             />
           </div>
           <button
@@ -245,6 +544,19 @@ export default function OrdersView() {
           </button>
         </div>
       </div>
+
+      {/* Trash Mode Banner */}
+      {viewMode === 'trash' && (
+        <div className="bg-red-50/80 border-b border-red-200 px-4 sm:px-7 py-3 flex items-center justify-between gap-3 text-start">
+          <div className="flex items-center gap-2.5 text-red-800 text-xs font-semibold">
+            <Trash2 size={16} className="text-red-500 shrink-0" />
+            <span>{t.softDeletedNotice}</span>
+          </div>
+          <span className="text-[11px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full shrink-0">
+            {filtered.length} {t.trash}
+          </span>
+        </div>
+      )}
 
       {/* Mobile Orders View (Portrait / Small Screens < md) */}
       <div className="block md:hidden divide-y divide-slate-100">
@@ -264,7 +576,7 @@ export default function OrdersView() {
             const cTotal = order.totalAmount || order.total || order.totals?.total || order.totals?.grandTotal || 0;
             const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
             const cShipping = order.shippingFee ?? order.totals?.shipping ?? 0;
-            const formattedPhone = formatWhatsAppNumber(cPhone);
+            const blacklistedRecord = checkBlacklist(cPhone);
 
             return (
               <motion.div
@@ -274,7 +586,7 @@ export default function OrdersView() {
                 transition={{ delay: index * 0.03 }}
                 className="p-4 flex flex-col gap-3 bg-white"
               >
-                {/* Card Header: Order ID, Date & Status Dropdown */}
+                {/* Card Header: Order ID, Date & Status Dropdown or Trash Badge */}
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-start">
                     <button
@@ -288,38 +600,68 @@ export default function OrdersView() {
                     <p className="text-[10px] text-slate-400 font-medium mt-0.5">{formatDate(order.createdAt)}</p>
                   </div>
 
-                  {/* Status Dropdown */}
-                  <select
-                    value={order.status}
-                    onChange={(e) => handleStatusChange(order, e.target.value)}
-                    className={`text-[11px] font-extrabold px-3 py-1.5 rounded-full border outline-none cursor-pointer appearance-none text-center shadow-sm ${getStatusBadge(order.status)}`}
-                    style={{ textAlignLast: 'center' }}
-                  >
-                    <option value="Pending" className="text-slate-700 bg-white">{t.pending}</option>
-                    <option value="Shipped" className="text-slate-700 bg-white">{t.shipped}</option>
-                    {order.status === 'Delivered' && (
-                      <option value="Delivered" className="text-slate-700 bg-white">{t.delivered}</option>
-                    )}
-                    <option value="Delivered - Pending Cash" className="text-slate-700 bg-white">{t.deliveredPendingCash}</option>
-                    <option value="Delivered - Collected" className="text-slate-700 bg-white">{t.deliveredCollected}</option>
-                    <option value="Returned" className="text-slate-700 bg-white">{t.returned}</option>
-                    <option value="Cancelled" className="text-slate-700 bg-white">{t.cancelled}</option>
-                  </select>
+                  {viewMode === 'trash' ? (
+                    <span className="text-[11px] font-extrabold px-3 py-1 rounded-full border bg-red-100 text-red-700 border-red-200">
+                      {t.trash}
+                    </span>
+                  ) : (
+                    <select
+                      value={order.status}
+                      onChange={(e) => handleStatusChange(order, e.target.value)}
+                      className={`text-[11px] font-extrabold px-3 py-1.5 rounded-full border outline-none cursor-pointer appearance-none text-center shadow-sm ${getStatusBadge(order.status)}`}
+                      style={{ textAlignLast: 'center' }}
+                    >
+                      <option value="Pending" className="text-slate-700 bg-white">{t.pending}</option>
+                      <option value="Shipped" className="text-slate-700 bg-white">{t.shipped}</option>
+                      {order.status === 'Delivered' && (
+                        <option value="Delivered" className="text-slate-700 bg-white">{t.delivered}</option>
+                      )}
+                      <option value="Delivered - Pending Cash" className="text-slate-700 bg-white">{t.deliveredPendingCash}</option>
+                      <option value="Delivered - Collected" className="text-slate-700 bg-white">{t.deliveredCollected}</option>
+                      <option value="Returned" className="text-slate-700 bg-white">{t.returned}</option>
+                      <option value="Cancelled" className="text-slate-700 bg-white">{t.cancelled}</option>
+                    </select>
+                  )}
                 </div>
 
-                {/* Customer Details & Location */}
+                {/* Customer Details, Location & Blacklist Risk Engine */}
                 <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-100 flex flex-col gap-1.5 text-xs text-start">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-extrabold text-[#181E1C] text-sm">{cName}</span>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-extrabold text-[#181E1C] text-sm">{cName}</span>
+                      {blacklistedRecord && (
+                        <button
+                          type="button"
+                          onClick={() => openBlacklistModal(order)}
+                          className="inline-flex items-center gap-1 text-[10px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full border border-red-200 hover:bg-red-200 transition-colors"
+                          title={blacklistedRecord.reason || t.highRisk}
+                        >
+                          <ShieldAlert size={11} />
+                          <span>{t.highRisk}</span>
+                        </button>
+                      )}
+                    </div>
+
                     {cPhone && (
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span className="text-[11px] font-bold text-slate-600">{cPhone}</span>
+                        {/* WhatsApp Template Selector Trigger */}
                         <button
-                          onClick={() => window.open(`https://wa.me/${formattedPhone}`, '_blank')}
+                          type="button"
+                          onClick={() => setWhatsAppOrder(order)}
                           className="text-emerald-500 hover:text-emerald-600 p-1 rounded-md hover:bg-emerald-50 transition-colors"
-                          title="Chat on WhatsApp"
+                          title={t.sendWhatsApp}
                         >
                           <MessageCircle size={15} />
+                        </button>
+                        {/* Customer Blacklist Manager Trigger */}
+                        <button
+                          type="button"
+                          onClick={() => openBlacklistModal(order)}
+                          className={`p-1 rounded-md transition-colors ${blacklistedRecord ? 'text-red-500 hover:bg-red-50' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-200'}`}
+                          title={blacklistedRecord ? t.removeFromBlacklist : t.blacklistCustomer}
+                        >
+                          <ShieldAlert size={14} />
                         </button>
                       </div>
                     )}
@@ -395,51 +737,70 @@ export default function OrdersView() {
 
                 {/* Mobile Actions Toolbar */}
                 <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                  <span className="text-[10px] font-semibold text-slate-400">
-                    {order.createdBy ? `By: ${order.createdBy}` : 'Website'}
-                  </span>
+                  <div className="text-[10px] text-slate-400 font-medium text-start">
+                    {viewMode === 'trash' ? (
+                      <span>{t.deletedBy}: {order.deletedBy || 'Admin'}</span>
+                    ) : (
+                      <span>{order.createdBy ? `By: ${order.createdBy}` : 'Website'}</span>
+                    )}
+                  </div>
 
                   <div className="flex items-center gap-1">
-                    {/* View Invoice */}
-                    <button
-                      onClick={() => setInvoiceOrder(order)}
-                      className="p-2 text-slate-500 hover:text-[#597867] rounded-lg hover:bg-slate-100 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center"
-                      title={t.orderDetails}
-                    >
-                      <FileText size={16} />
-                    </button>
+                    {viewMode === 'trash' ? (
+                      /* Restore Order Button */
+                      <button
+                        type="button"
+                        onClick={() => setOrderToRestore(order)}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-[#597867] hover:bg-[#486253] text-white text-xs font-bold rounded-lg transition-colors shadow-sm min-h-[38px]"
+                        title={t.restoreOrder}
+                      >
+                        <RotateCcw size={14} />
+                        <span>{t.restore}</span>
+                      </button>
+                    ) : (
+                      <>
+                        {/* View Invoice */}
+                        <button
+                          onClick={() => setInvoiceOrder(order)}
+                          className="p-2 text-slate-500 hover:text-[#597867] rounded-lg hover:bg-slate-100 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center"
+                          title={t.orderDetails}
+                        >
+                          <FileText size={16} />
+                        </button>
 
-                    {/* Internal Notes */}
-                    <button
-                      onClick={() => toggleNotes(order.id)}
-                      className={`relative p-2 rounded-lg transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center ${activeNotesOrderIds[order.id] ? 'bg-slate-100 text-slate-700' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
-                      title={t.internalNotes}
-                    >
-                      <MessageCircle size={16} />
-                      {order.notes && order.notes.length > 0 && (
-                        <span className="absolute top-1.5 right-1.5 bg-[#597867] text-white text-[9px] font-black rounded-full h-3.5 w-3.5 flex items-center justify-center">
-                          {order.notes.length}
-                        </span>
-                      )}
-                    </button>
+                        {/* Internal Notes */}
+                        <button
+                          onClick={() => toggleNotes(order.id)}
+                          className={`relative p-2 rounded-lg transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center ${activeNotesOrderIds[order.id] ? 'bg-slate-100 text-slate-700' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+                          title={t.internalNotes}
+                        >
+                          <MessageCircle size={16} />
+                          {order.notes && order.notes.length > 0 && (
+                            <span className="absolute top-1.5 right-1.5 bg-[#597867] text-white text-[9px] font-black rounded-full h-3.5 w-3.5 flex items-center justify-center">
+                              {order.notes.length}
+                            </span>
+                          )}
+                        </button>
 
-                    {/* Edit Order */}
-                    <button
-                      onClick={() => { setOrderToEdit(order); setIsEditModalOpen(true); }}
-                      className="text-slate-500 hover:text-blue-500 transition-colors p-2 rounded-lg hover:bg-blue-50 min-h-[40px] min-w-[40px] flex items-center justify-center"
-                      title={t.editOrder}
-                    >
-                      <Pencil size={16} />
-                    </button>
+                        {/* Edit Order */}
+                        <button
+                          onClick={() => { setOrderToEdit(order); setIsEditModalOpen(true); }}
+                          className="text-slate-500 hover:text-blue-500 transition-colors p-2 rounded-lg hover:bg-blue-50 min-h-[40px] min-w-[40px] flex items-center justify-center"
+                          title={t.editOrder}
+                        >
+                          <Pencil size={16} />
+                        </button>
 
-                    {/* Delete Order */}
-                    <button
-                      onClick={() => setOrderToDelete(order)}
-                      className="text-slate-500 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50 min-h-[40px] min-w-[40px] flex items-center justify-center"
-                      title={t.deleteOrder}
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                        {/* Soft Delete Order */}
+                        <button
+                          onClick={() => setOrderToDelete(order)}
+                          className="text-slate-500 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50 min-h-[40px] min-w-[40px] flex items-center justify-center"
+                          title={t.deleteOrder}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -473,7 +834,9 @@ export default function OrdersView() {
               <th className="p-4 font-semibold text-start hidden md:table-cell">{t.items}</th>
               <th className="p-4 font-semibold text-start">{t.totalValue}</th>
               <th className="p-4 font-semibold text-center">{t.status}</th>
-              <th className="p-4 font-semibold px-6 text-end">{t.createdBy}</th>
+              <th className="p-4 font-semibold px-6 text-end">
+                {viewMode === 'trash' ? t.actions : t.createdBy}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -490,7 +853,6 @@ export default function OrdersView() {
               </tr>
             ) : (
               filtered.map((order, index) => {
-                console.log("Raw Admin Order Data:", order);
                 const cName = order.customerName || (order.customerDetails ? `${order.customerDetails.firstName} ${order.customerDetails.lastName}` : 'Unknown');
                 const cPhone = order.phone || order.customerDetails?.phone || '';
                 const cCity = order.governorate || order.customerDetails?.city || 'Unknown';
@@ -498,14 +860,15 @@ export default function OrdersView() {
                 const cTotal = order.totalAmount || order.total || order.totals?.total || order.totals?.grandTotal || 0;
                 const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
                 const cShipping = order.shippingFee ?? order.totals?.shipping ?? 0;
+                const blacklistedRecord = checkBlacklist(cPhone);
 
                 return (
                   <React.Fragment key={order.id}>
                     <motion.tr
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors"
+                      transition={{ delay: index * 0.04 }}
+                      className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors ${viewMode === 'trash' ? 'bg-red-50/20' : ''}`}
                     >
                       <td className="p-4 px-6 align-middle text-start">
                         <button
@@ -520,18 +883,39 @@ export default function OrdersView() {
                       </td>
 
                       <td className="p-4 align-middle text-start">
-                        <p className="font-bold text-[#181E1C]">{cName}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-bold text-[#181E1C]">{cName}</p>
+                          {blacklistedRecord && (
+                            <button
+                              type="button"
+                              onClick={() => openBlacklistModal(order)}
+                              className="inline-flex items-center gap-1 text-[10px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full border border-red-200 hover:bg-red-200 transition-colors"
+                              title={blacklistedRecord.reason || t.highRisk}
+                            >
+                              <ShieldAlert size={10} />
+                              <span>{t.highRisk}</span>
+                            </button>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           <p className="text-[11px] text-slate-500">{cPhone}</p>
+                          {/* WhatsApp Template Popover Trigger */}
                           <button
-                            onClick={() => {
-                              const formattedPhone = formatWhatsAppNumber(cPhone);
-                              window.open(`https://wa.me/${formattedPhone}`, '_blank');
-                            }}
+                            type="button"
+                            onClick={() => setWhatsAppOrder(order)}
                             className="text-emerald-500 hover:text-emerald-600 transition-colors"
-                            title="Chat on WhatsApp"
+                            title={t.sendWhatsApp}
                           >
                             <MessageCircle size={14} />
+                          </button>
+                          {/* Blacklist modal trigger */}
+                          <button
+                            type="button"
+                            onClick={() => openBlacklistModal(order)}
+                            className={`transition-colors ${blacklistedRecord ? 'text-red-500 hover:text-red-700' : 'text-slate-400 hover:text-slate-600'}`}
+                            title={blacklistedRecord ? t.removeFromBlacklist : t.blacklistCustomer}
+                          >
+                            <ShieldAlert size={13} />
                           </button>
                         </div>
                       </td>
@@ -564,7 +948,7 @@ export default function OrdersView() {
                                   <span className="text-[10px] text-slate-500 font-medium">Size: {item.size} | Qty: {item.qty || item.quantity}</span>
                                 </div>
                               </div>
-                            )
+                            );
                           })}
                         </div>
                       </td>
@@ -582,67 +966,92 @@ export default function OrdersView() {
                       </td>
 
                       <td className="p-4 align-middle text-center">
-                        <select
-                          value={order.status}
-                          onChange={(e) => handleStatusChange(order, e.target.value)}
-                          className={`text-xs font-bold px-3 py-1.5 rounded-full border outline-none cursor-pointer appearance-none text-center ${getStatusBadge(order.status)}`}
-                          style={{ textAlignLast: 'center' }}
-                        >
-                          <option value="Pending" className="text-slate-700 bg-white">{t.pending}</option>
-                          <option value="Shipped" className="text-slate-700 bg-white">{t.shipped}</option>
-                          {order.status === 'Delivered' && (
-                            <option value="Delivered" className="text-slate-700 bg-white">{t.delivered}</option>
-                          )}
-                          <option value="Delivered - Pending Cash" className="text-slate-700 bg-white">{t.deliveredPendingCash}</option>
-                          <option value="Delivered - Collected" className="text-slate-700 bg-white">{t.deliveredCollected}</option>
-                          <option value="Returned" className="text-slate-700 bg-white">{t.returned}</option>
-                          <option value="Cancelled" className="text-slate-700 bg-white">{t.cancelled}</option>
-                        </select>
+                        {viewMode === 'trash' ? (
+                          <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-red-100 text-red-700 border border-red-200">
+                            {t.trash}
+                          </span>
+                        ) : (
+                          <select
+                            value={order.status}
+                            onChange={(e) => handleStatusChange(order, e.target.value)}
+                            className={`text-xs font-bold px-3 py-1.5 rounded-full border outline-none cursor-pointer appearance-none text-center ${getStatusBadge(order.status)}`}
+                            style={{ textAlignLast: 'center' }}
+                          >
+                            <option value="Pending" className="text-slate-700 bg-white">{t.pending}</option>
+                            <option value="Shipped" className="text-slate-700 bg-white">{t.shipped}</option>
+                            {order.status === 'Delivered' && (
+                              <option value="Delivered" className="text-slate-700 bg-white">{t.delivered}</option>
+                            )}
+                            <option value="Delivered - Pending Cash" className="text-slate-700 bg-white">{t.deliveredPendingCash}</option>
+                            <option value="Delivered - Collected" className="text-slate-700 bg-white">{t.deliveredCollected}</option>
+                            <option value="Returned" className="text-slate-700 bg-white">{t.returned}</option>
+                            <option value="Cancelled" className="text-slate-700 bg-white">{t.cancelled}</option>
+                          </select>
+                        )}
                       </td>
 
                       <td className="p-4 align-middle px-6 text-end">
-                        <div className="flex items-center justify-end gap-2">
-                          <span className="text-xs font-semibold text-slate-500 hidden lg:inline">{order.createdBy || 'Website'}</span>
-                          
-                          <button
-                            onClick={() => setInvoiceOrder(order)}
-                            className="text-slate-400 hover:text-[#597867] transition-colors p-2 rounded-lg hover:bg-emerald-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
-                            title={t.orderDetails}
-                          >
-                            <FileText size={16} />
-                          </button>
+                        {viewMode === 'trash' ? (
+                          <div className="flex items-center justify-end gap-3">
+                            <div className="text-[11px] text-slate-400 font-medium text-end">
+                              <p>{t.deletedOn}: {formatDate(order.deletedAt)}</p>
+                              <p>{t.deletedBy}: {order.deletedBy || 'Admin'}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setOrderToRestore(order)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#597867] hover:bg-[#486253] text-white text-xs font-bold rounded-lg transition-colors shadow-sm min-h-[36px]"
+                              title={t.restoreOrder}
+                            >
+                              <RotateCcw size={14} />
+                              <span>{t.restore}</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-2">
+                            <span className="text-xs font-semibold text-slate-500 hidden lg:inline">{order.createdBy || 'Website'}</span>
+                            
+                            <button
+                              onClick={() => setInvoiceOrder(order)}
+                              className="text-slate-400 hover:text-[#597867] transition-colors p-2 rounded-lg hover:bg-emerald-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                              title={t.orderDetails}
+                            >
+                              <FileText size={16} />
+                            </button>
 
-                          <button
-                            onClick={() => toggleNotes(order.id)}
-                            className={`relative p-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center ${activeNotesOrderIds[order.id] ? 'bg-slate-100 text-slate-700' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
-                            title={t.internalNotes}
-                          >
-                            <MessageCircle size={16} />
-                            {order.notes && order.notes.length > 0 && (
-                              <span className="absolute top-1.5 right-1.5 bg-[#597867] text-white text-[9px] font-black rounded-full h-4 w-4 flex items-center justify-center border border-white shadow-sm">
-                                {order.notes.length}
-                              </span>
-                            )}
-                          </button>
+                            <button
+                              onClick={() => toggleNotes(order.id)}
+                              className={`relative p-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center ${activeNotesOrderIds[order.id] ? 'bg-slate-100 text-slate-700' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
+                              title={t.internalNotes}
+                            >
+                              <MessageCircle size={16} />
+                              {order.notes && order.notes.length > 0 && (
+                                <span className="absolute top-1.5 right-1.5 bg-[#597867] text-white text-[9px] font-black rounded-full h-4 w-4 flex items-center justify-center border border-white shadow-sm">
+                                  {order.notes.length}
+                                </span>
+                              )}
+                            </button>
 
-                          <button
-                            onClick={() => { setOrderToEdit(order); setIsEditModalOpen(true); }}
-                            className="text-slate-400 hover:text-blue-500 transition-colors p-2 rounded-lg hover:bg-blue-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
-                            title={t.editOrder}
-                          >
-                            <Pencil size={16} />
-                          </button>
+                            <button
+                              onClick={() => { setOrderToEdit(order); setIsEditModalOpen(true); }}
+                              className="text-slate-400 hover:text-blue-500 transition-colors p-2 rounded-lg hover:bg-blue-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                              title={t.editOrder}
+                            >
+                              <Pencil size={16} />
+                            </button>
 
-                          <button
-                            onClick={() => setOrderToDelete(order)}
-                            className="text-slate-400 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
-                            title={t.deleteOrder}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
+                            <button
+                              onClick={() => setOrderToDelete(order)}
+                              className="text-slate-400 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                              title={t.deleteOrder}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </motion.tr>
+
                     {activeNotesOrderIds[order.id] && (
                       <motion.tr
                         initial={{ opacity: 0, height: 0 }}
@@ -654,6 +1063,7 @@ export default function OrdersView() {
                         </td>
                       </motion.tr>
                     )}
+
                     {order.status === 'Returned' && (
                       <motion.tr
                         initial={{ opacity: 0, height: 0 }}
@@ -666,7 +1076,7 @@ export default function OrdersView() {
                       </motion.tr>
                     )}
                   </React.Fragment>
-                )
+                );
               })
             )}
           </tbody>
@@ -678,6 +1088,72 @@ export default function OrdersView() {
       <OrderInvoiceModal isOpen={!!invoiceOrder} onClose={() => setInvoiceOrder(null)} order={invoiceOrder} />
       <ImageLightbox isOpen={!!lightboxImg} imageUrl={lightboxImg} onClose={() => setLightboxImg(null)} />
 
+      {/* Customer Blacklist Modal */}
+      <BlacklistModal
+        isOpen={!!blacklistCustomerModal}
+        onClose={() => setBlacklistCustomerModal(null)}
+        customer={blacklistCustomerModal}
+        onToggle={toggleBlacklistCustomer}
+        language={language}
+      />
+
+      {/* WhatsApp Multi-Template Pipeline Modal */}
+      <WhatsAppModal
+        isOpen={!!whatsAppOrder}
+        onClose={() => setWhatsAppOrder(null)}
+        order={whatsAppOrder}
+        language={language}
+      />
+
+      {/* Restore Order Modal */}
+      {orderToRestore && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-white w-full max-w-md rounded-2xl p-6 shadow-xl border border-slate-100 flex flex-col gap-4 text-start"
+          >
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-emerald-50 rounded-xl text-[#597867] shrink-0">
+                <RotateCcw size={24} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-extrabold text-slate-900 leading-6">
+                  {t.restoreOrder}
+                </h3>
+                <p className="text-sm font-semibold text-slate-500 leading-relaxed mt-1">
+                  {t.restoreConfirmPrompt}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-3 mt-2">
+              <button
+                type="button"
+                onClick={() => setOrderToRestore(null)}
+                className="px-4 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-extrabold rounded-xl transition-colors min-h-[40px]"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const id = orderToRestore.id;
+                  setOrderToRestore(null);
+                  await restoreOrder(id);
+                }}
+                className="px-4 py-2.5 bg-[#597867] hover:bg-[#486253] shadow-md shadow-[#597867]/20 text-white text-xs font-extrabold rounded-xl transition-colors min-h-[40px] flex items-center gap-1.5"
+              >
+                <RotateCcw size={14} />
+                <span>{t.restore}</span>
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Delete (Soft-Delete) Confirmation Modal */}
       {orderToDelete && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" dir={language === 'ar' ? 'rtl' : 'ltr'}>
           <motion.div
@@ -702,12 +1178,14 @@ export default function OrdersView() {
             
             <div className="flex justify-end gap-3 mt-2">
               <button
+                type="button"
                 onClick={() => setOrderToDelete(null)}
                 className="px-4 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-extrabold rounded-xl transition-colors min-h-[40px]"
               >
                 {t.cancel}
               </button>
               <button
+                type="button"
                 onClick={async () => {
                   const id = orderToDelete.id;
                   setOrderToDelete(null);

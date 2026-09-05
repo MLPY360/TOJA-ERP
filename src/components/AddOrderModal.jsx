@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, Trash2, Tag, Percent } from 'lucide-react';
-import { useStore } from '../store/useStore';
+import { X, Plus, Trash2, Tag, Percent, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { useStore, normalizePhone } from '../store/useStore';
 import { translations } from '../translations';
 
 export default function AddOrderModal({ isOpen, onClose }) {
-  const { products, addOrder, language } = useStore();
+  const { products, addOrder, language, blacklist } = useStore();
   const t = translations[language];
   
   const [customerName, setCustomerName] = useState('');
@@ -15,6 +15,20 @@ export default function AddOrderModal({ isOpen, onClose }) {
   const [shippingFee, setShippingFee] = useState('');
   
   const [items, setItems] = useState([{ productId: '', size: 'M', qty: 1 }]);
+
+  // Blacklist check
+  const blacklistedMatch = useMemo(() => {
+    const clean = normalizePhone(phone);
+    if (!clean || !blacklist) return null;
+    return blacklist.find(b => b.phone === clean);
+  }, [phone, blacklist]);
+
+  const getStockForSize = (product, size) => {
+    if (!product) return 0;
+    const initial = (product.initial && product.initial[size]) || 0;
+    const sold = (product.sold && product.sold[size]) || 0;
+    return Math.max(0, initial - sold);
+  };
 
   // Discount state: type ('percentage' | 'fixed') and value
   const [discountType, setDiscountType] = useState('percentage');
@@ -82,6 +96,30 @@ export default function AddOrderModal({ isOpen, onClose }) {
       return;
     }
 
+    // Check stock availability
+    for (const item of validItems) {
+      const product = products.find(p => p.id === item.productId);
+      if (product) {
+        const stock = getStockForSize(product, item.size);
+        if (stock <= 0) {
+          alert(`${product.name} (${item.size}): ${t.outOfStock}`);
+          return;
+        }
+        if (item.qty > stock) {
+          alert(`${product.name} (${item.size}): ${t.lowStock} - Max: ${stock} ${t.leftInStock}`);
+          return;
+        }
+      }
+    }
+
+    // Blacklist check confirmation
+    if (blacklistedMatch) {
+      const proceed = window.confirm(
+        `${t.blacklistWarningTitle}\n${blacklistedMatch.reason ? `${t.blacklistReason}: ${blacklistedMatch.reason}\n` : ''}${t.blacklistRecommendation}\n\nDo you want to create this order anyway?`
+      );
+      if (!proceed) return;
+    }
+
     const orderData = {
       customerName,
       phone,
@@ -117,6 +155,18 @@ export default function AddOrderModal({ isOpen, onClose }) {
     const newItems = [...items];
     if (field === 'qty') {
       newItems[index][field] = Math.max(1, parseInt(value) || 1);
+    } else if (field === 'productId') {
+      newItems[index].productId = value;
+      const product = products.find(p => p.id === value);
+      if (product) {
+        const currentStock = getStockForSize(product, newItems[index].size);
+        if (currentStock <= 0) {
+          const firstAvailable = ['M', 'L', 'XL', 'XXL'].find(s => getStockForSize(product, s) > 0);
+          if (firstAvailable) {
+            newItems[index].size = firstAvailable;
+          }
+        }
+      }
     } else {
       newItems[index][field] = value;
     }
@@ -157,8 +207,25 @@ export default function AddOrderModal({ isOpen, onClose }) {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-start">{t.phoneNumber}</label>
-                  <input required type="tel" value={phone} onChange={e => setPhone(e.target.value)} className="w-full h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/20 text-start" placeholder="01xxxxxxxxx" />
+                  <input required type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={`w-full h-11 px-4 rounded-lg border text-sm outline-none text-start transition-colors ${blacklistedMatch ? 'border-amber-400 bg-amber-50/40 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20' : 'border-slate-200 bg-slate-50 focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/20'}`} placeholder="01xxxxxxxxx" />
                 </div>
+
+                {/* Blacklist Warning Banner */}
+                {blacklistedMatch && (
+                  <div className="md:col-span-2 p-3 bg-amber-50/90 border border-amber-300 rounded-xl flex items-start gap-3">
+                    <ShieldAlert className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                    <div className="text-xs text-start">
+                      <p className="font-extrabold text-amber-900">{t.blacklistWarningTitle}</p>
+                      <p className="text-amber-800 mt-0.5">
+                        {blacklistedMatch.reason ? `${t.blacklistReason}: ${blacklistedMatch.reason}` : t.highRisk}
+                      </p>
+                      <p className="text-amber-700 font-medium mt-1">
+                        {t.blacklistRecommendation}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-start">{t.governorate}</label>
                   <input required type="text" value={governorate} onChange={e => setGovernorate(e.target.value)} className="w-full h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/20 text-start" placeholder="e.g., Cairo" />
@@ -178,35 +245,59 @@ export default function AddOrderModal({ isOpen, onClose }) {
                 </div>
 
                 <div className="flex flex-col gap-3">
-                  {items.map((item, index) => (
-                    <div key={index} className="flex flex-col sm:flex-row gap-3 sm:items-end p-4 sm:p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <div className="flex-1 w-full">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-start">{t.product}</label>
-                        <select required value={item.productId} onChange={e => updateItem(index, 'productId', e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start">
-                          <option value="" disabled>Select Product</option>
-                          {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
-                        </select>
-                      </div>
-                      <div className="flex items-end gap-3 w-full sm:w-auto">
-                        <div className="flex-1 sm:w-24">
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-start">{t.size}</label>
-                          <select value={item.size} onChange={e => updateItem(index, 'size', e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start">
-                            <option value="M">M</option>
-                            <option value="L">L</option>
-                            <option value="XL">XL</option>
-                            <option value="XXL">XXL</option>
+                  {items.map((item, index) => {
+                    const selectedProduct = products.find(p => p.id === item.productId);
+                    const selectedStock = selectedProduct ? getStockForSize(selectedProduct, item.size) : null;
+
+                    return (
+                      <div key={index} className="flex flex-col sm:flex-row gap-3 sm:items-end p-4 sm:p-3 bg-slate-50 rounded-xl border border-slate-200">
+                        <div className="flex-1 w-full">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-start">{t.product}</label>
+                          <select required value={item.productId} onChange={e => updateItem(index, 'productId', e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start">
+                            <option value="" disabled>Select Product</option>
+                            {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
                           </select>
                         </div>
-                        <div className="flex-1 sm:w-20">
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-start">{t.qty}</label>
-                          <input type="number" min="1" value={item.qty} onChange={e => updateItem(index, 'qty', e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start" />
+                        <div className="flex items-end gap-3 w-full sm:w-auto">
+                          <div className="flex-1 sm:w-32">
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-start">{t.size}</label>
+                              {selectedProduct && selectedStock !== null && (
+                                <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded ${selectedStock <= 0 ? 'bg-red-100 text-red-700' : selectedStock <= 2 ? 'bg-amber-100 text-amber-800' : 'text-slate-400'}`}>
+                                  {selectedStock <= 0 ? t.outOfStock : `${selectedStock} ${t.leftInStock || 'left'}`}
+                                </span>
+                              )}
+                            </div>
+                            <select value={item.size} onChange={e => updateItem(index, 'size', e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start">
+                              {['M', 'L', 'XL', 'XXL'].map(sz => {
+                                const szStock = selectedProduct ? getStockForSize(selectedProduct, sz) : null;
+                                const isOOS = szStock !== null && szStock <= 0;
+                                return (
+                                  <option key={sz} value={sz} disabled={isOOS}>
+                                    {sz} {selectedProduct ? (szStock > 0 ? `(${szStock})` : `(${t.outOfStock})`) : ''}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+                          <div className="flex-1 sm:w-20">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-start">{t.qty}</label>
+                            <input
+                              type="number"
+                              min="1"
+                              max={selectedStock && selectedStock > 0 ? selectedStock : undefined}
+                              value={item.qty}
+                              onChange={e => updateItem(index, 'qty', e.target.value)}
+                              className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start"
+                            />
+                          </div>
+                          <button type="button" onClick={() => removeItem(index)} disabled={items.length === 1} className="h-10 px-3 text-slate-400 hover:text-red-500 disabled:opacity-30 transition-colors">
+                            <Trash2 size={16} />
+                          </button>
                         </div>
-                        <button type="button" onClick={() => removeItem(index)} disabled={items.length === 1} className="h-10 px-3 text-slate-400 hover:text-red-500 disabled:opacity-30 transition-colors">
-                          <Trash2 size={16} />
-                        </button>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Minus, Search, PackageX, Trash2, Pencil } from 'lucide-react';
+import { Plus, Minus, Search, PackageX, Trash2, Pencil, AlertTriangle } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
 import ImageLightbox from './ImageLightbox';
@@ -23,6 +23,14 @@ export default function InventoryTable({ onEdit }) {
     return p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q);
   });
 
+  const lowStockCount = products.filter(p => {
+    return ['M', 'L', 'XL', 'XXL'].some(size => {
+      const init = p.initialStock?.[size] || 0;
+      const sold = p.sold?.[size] || 0;
+      return init > 0 && (init - sold) <= 2;
+    });
+  }).length;
+
   const handleDelete = (id) => {
     if (deleteConfirmId === id) {
       deleteProduct(id);
@@ -35,11 +43,18 @@ export default function InventoryTable({ onEdit }) {
 
   return (
     <div className="bg-white rounded-2xl shadow-[0_2px_10px_rgba(0,0,0,0.03)] border border-slate-100 overflow-hidden mt-8">
-      <div className="flex flex-col gap-4 border-b border-slate-100 px-7 py-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 border-b border-slate-100 px-4 sm:px-7 py-4 sm:py-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-[13px] font-bold uppercase tracking-[0.08em] text-[#181E1C]">
-            {t.productInventory}
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-[13px] font-bold uppercase tracking-[0.08em] text-[#181E1C]">
+              {t.productInventory}
+            </h2>
+            {lowStockCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                <AlertTriangle size={11} /> {lowStockCount} {t.stockAlert}
+              </span>
+            )}
+          </div>
           <p className="mt-1 text-[12px] font-medium text-slate-400">
             {products.length} products · {filtered.length} shown
           </p>
@@ -122,13 +137,29 @@ export default function InventoryTable({ onEdit }) {
                     </td>
                     
                     <td className="p-4 align-middle text-start">
-                      <div className="flex flex-wrap gap-1.5 max-w-[140px]">
+                      <div className="flex flex-wrap gap-1.5 max-w-[150px]">
                         {sizes.map((size) => {
-                          const sizeStock = (product.initialStock?.[size] || 0) - (product.sold?.[size] || 0);
-                          if ((product.initialStock?.[size] || 0) === 0) return null;
+                          const sizeInitial = product.initialStock?.[size] || 0;
+                          if (sizeInitial === 0) return null;
+                          const sizeStock = sizeInitial - (product.sold?.[size] || 0);
+
+                          let badgeClass = "bg-[#F8FAFC] text-slate-600 border-slate-200";
+                          let labelExtra = "";
+                          if (sizeStock <= 0) {
+                            badgeClass = "bg-red-50 text-red-700 border-red-200 font-black";
+                            labelExtra = " 🚫";
+                          } else if (sizeStock <= 2) {
+                            badgeClass = "bg-amber-50 text-amber-800 border-amber-200 font-black";
+                            labelExtra = " ⚠️";
+                          }
+
                           return (
-                            <span key={size} className="group/size relative text-[10px] font-bold bg-[#F8FAFC] text-slate-600 px-2 py-1 rounded border border-slate-200 flex items-center gap-1.5">
-                              {size}: {sizeStock}
+                            <span
+                              key={size}
+                              className={`group/size relative text-[10px] font-bold px-2 py-1 rounded border flex items-center gap-1.5 transition-colors ${badgeClass}`}
+                              title={sizeStock <= 0 ? t.outOfStock : sizeStock <= 2 ? `${sizeStock} ${t.leftInStock} (${t.lowStock})` : undefined}
+                            >
+                              {size}: {sizeStock}{labelExtra}
                               {sizeStock > 0 && (
                                 <button
                                   onClick={() => reportDefectiveItem(product.id, size)}
@@ -277,12 +308,23 @@ export default function InventoryTable({ onEdit }) {
                       const sizeSold = product.sold?.[size] || 0;
                       const sizeStock = sizeInitial - sizeSold;
                       if (sizeInitial === 0) return null;
+
+                      let mobileBadge = "bg-slate-50 border-slate-100 text-[#181E1C]";
+                      if (sizeStock <= 0) {
+                        mobileBadge = "bg-red-50 border-red-200 text-red-700 font-black";
+                      } else if (sizeStock <= 2) {
+                        mobileBadge = "bg-amber-50 border-amber-200 text-amber-800 font-black";
+                      }
+
                       return (
-                        <div key={size} className="bg-slate-50 rounded-lg p-2 flex flex-col items-center justify-center border border-slate-100">
-                          <span className="text-[10px] font-bold text-slate-500 mb-0.5">{size}</span>
-                          <span className="text-xs font-black text-[#181E1C]">{sizeStock}</span>
+                        <div key={size} className={`rounded-lg p-2 flex flex-col items-center justify-center border ${mobileBadge}`}>
+                          <span className="text-[10px] font-bold mb-0.5 opacity-80">{size}</span>
+                          <span className="text-xs font-black">
+                            {sizeStock}
+                            {sizeStock <= 0 ? ' 🚫' : sizeStock <= 2 ? ' ⚠️' : ''}
+                          </span>
                         </div>
-                      )
+                      );
                     })}
                   </div>
                   <div className="mt-3 flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
