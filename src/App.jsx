@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Download, ClipboardList, LogOut, Package, BarChart3, LayoutDashboard, Menu, Globe, Wallet } from 'lucide-react';
+import { Plus, Download, ClipboardList, LogOut, Package, BarChart3, LayoutDashboard, Menu, Globe, Wallet, ShieldAlert, Users } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useStore } from './store/useStore';
 import { translations } from './translations';
@@ -14,8 +14,8 @@ import AddProductModal from './components/AddProductModal';
 import OrdersView from './components/OrdersView';
 import AddOrderModal from './components/AddOrderModal';
 import FinanceView from './components/FinanceView';
+import CustomersView from './components/CustomersView';
 
-// الفلتر الذكي لحماية السيستم من أي أرقام فاضية
 function formatEGP(amount) {
   const safeAmount = Number(amount) || 0;
   return safeAmount.toLocaleString('en-EG') + ' EGP';
@@ -24,18 +24,26 @@ function formatEGP(amount) {
 const getSum = (obj) => Object.values(obj || {}).reduce((a, b) => a + b, 0);
 
 export default function App() {
-  const { currentUser, logout, products, orders, expenses, language, toggleLanguage, initializeListeners } = useStore();
+  const { currentUser, logout, products, orders, expenses, language, toggleLanguage, userRole, setUserRole } = useStore();
   const t = translations[language];
 
   useEffect(() => {
     useStore.getState().initAuthListener();
   }, []);
+
   const [showLogs, setShowLogs] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [editProduct, setEditProduct] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // If user switches to operations role while in finance or customers tab, redirect to dashboard
+  useEffect(() => {
+    if (userRole === 'operations' && (activeTab === 'finance' || activeTab === 'customers')) {
+      setActiveTab('dashboard');
+    }
+  }, [userRole, activeTab]);
 
   const metrics = useMemo(() => {
     let totalInStock = 0;
@@ -65,7 +73,7 @@ export default function App() {
 
         order.items?.forEach(item => {
           const product = products.find(p => p.id === item.productId);
-          const itemQty = item.qty || item.quantity || 1; // قراءة الكمية بالطريقتين
+          const itemQty = item.qty || item.quantity || 1;
           if (product) {
             orderCost += (Number(product.costPrice) || 0) * itemQty;
             itemsRevenue += (Number(product.sellingPrice) || 0) * itemQty;
@@ -79,7 +87,6 @@ export default function App() {
         totalRevenue += netItemsRevenue;
         totalProfit += (netItemsRevenue - orderCost);
 
-        // قراءة إجمالي الأوردر بالطريقتين
         const orderTotal = order.total ?? order.totals?.grandTotal ?? 0;
 
         if (order.status === 'Delivered - Pending Cash') {
@@ -88,7 +95,6 @@ export default function App() {
           cashInTreasury += orderTotal;
         }
       } else if (order.status === 'Returned') {
-        // قراءة مصاريف الشحن بالطريقتين
         returnLosses += Number(order.shippingFee ?? order.totals?.shipping ?? 0);
       }
     });
@@ -122,6 +128,7 @@ export default function App() {
   }
 
   const handleExport = () => {
+    const isOps = userRole === 'operations';
     const data = products.map(p => {
       const stockM = (p.initialStock?.M || 0) - (p.sold?.M || 0);
       const stockL = (p.initialStock?.L || 0) - (p.sold?.L || 0);
@@ -132,19 +139,24 @@ export default function App() {
       const rev = totalSold * (Number(p.sellingPrice) || 0);
       const prof = totalSold * ((Number(p.sellingPrice) || 0) - (Number(p.costPrice) || 0));
 
-      return {
+      const row = {
         "Product Name": p.name,
         "SKU": p.sku,
         "Stock (M)": stockM,
         "Stock (L)": stockL,
         "Stock (XL)": stockXL,
         "Stock (XXL)": stockXXL,
-        "Cost Price (EGP)": p.costPrice,
         "Selling Price (EGP)": p.sellingPrice,
-        "Total Sold": totalSold,
-        "Total Revenue (EGP)": rev,
-        "Total Profit (EGP)": prof
+        "Total Sold": totalSold
       };
+
+      if (!isOps) {
+        row["Cost Price (EGP)"] = p.costPrice;
+        row["Total Revenue (EGP)"] = rev;
+        row["Total Profit (EGP)"] = prof;
+      }
+
+      return row;
     });
 
     const worksheet = XLSX.utils.json_to_sheet(data);
@@ -206,23 +218,59 @@ export default function App() {
                 >
                   <Package size={18} strokeWidth={2} /> {t.orders}
                 </div>
-                <div
-                  onClick={() => { setActiveTab('finance'); setIsMobileMenuOpen(false); }}
-                  className={`px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-semibold cursor-pointer transition-colors ${activeTab === 'finance' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
-                >
-                  <Wallet size={18} strokeWidth={2} /> {t.finance || 'Finance'}
-                </div>
+                {userRole !== 'operations' && (
+                  <div
+                    onClick={() => { setActiveTab('customers'); setIsMobileMenuOpen(false); }}
+                    className={`px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-semibold cursor-pointer transition-colors ${activeTab === 'customers' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
+                  >
+                    <Users size={18} strokeWidth={2} /> {t.customers || 'Customers'}
+                  </div>
+                )}
+                {userRole !== 'operations' && (
+                  <div
+                    onClick={() => { setActiveTab('finance'); setIsMobileMenuOpen(false); }}
+                    className={`px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-semibold cursor-pointer transition-colors ${activeTab === 'finance' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
+                  >
+                    <Wallet size={18} strokeWidth={2} /> {t.finance || 'Finance'}
+                  </div>
+                )}
               </nav>
             </div>
 
-            <div className="p-6 border-t border-white/10">
-              <p className="text-xs text-white/50 mb-1">{t.loggedInAs}</p>
-              <p className="text-sm font-bold truncate mb-4">{currentUser.name}</p>
+            {/* Sidebar Footer with Role Switcher */}
+            <div className="p-5 border-t border-white/10">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-white/40">{t.loggedInAs}</p>
+                  <p className="text-sm font-bold truncate text-white">{currentUser.name}</p>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                  userRole === 'admin' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
+                  userRole === 'operations' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                  'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                }`}>
+                  {userRole === 'admin' ? t.roleAdmin : userRole === 'operations' ? t.roleOperations : t.roleFinance}
+                </span>
+              </div>
+
+              <div className="mb-4">
+                <label className="text-[10px] uppercase font-bold text-white/40 block mb-1.5">{t.switchRole}</label>
+                <select
+                  value={userRole}
+                  onChange={(e) => setUserRole(e.target.value)}
+                  className="w-full text-xs font-semibold bg-white/10 hover:bg-white/15 text-white rounded-xl px-3 py-2 border border-white/15 outline-none focus:border-[#597867] transition-colors cursor-pointer"
+                >
+                  <option value="admin" className="bg-[#181E1C] text-white">{t.roleAdmin}</option>
+                  <option value="operations" className="bg-[#181E1C] text-white">{t.roleOperations}</option>
+                  <option value="finance" className="bg-[#181E1C] text-white">{t.roleFinance}</option>
+                </select>
+              </div>
+
               <button
                 onClick={logout}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-sm font-semibold transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-xs font-semibold transition-colors"
               >
-                <LogOut size={16} /> {t.logout}
+                <LogOut size={15} /> {t.logout}
               </button>
             </div>
           </aside>
@@ -237,10 +285,10 @@ export default function App() {
                   </button>
                   <div>
                     <h1 className="text-3xl font-extrabold text-[#181E1C] tracking-tight">
-                      {activeTab === 'dashboard' ? t.dashboard : activeTab === 'orders' ? t.orders : t.finance || 'Finance'}
+                      {activeTab === 'dashboard' ? t.dashboard : activeTab === 'orders' ? t.orders : activeTab === 'customers' ? (t.customers || 'Customers') : (t.finance || 'Finance')}
                     </h1>
                     <p className="text-sm text-slate-500 mt-1 font-medium">
-                      {activeTab === 'dashboard' ? t.overview : activeTab === 'orders' ? t.manageOrders : t.expenseTracker || 'Expense Tracker'}
+                      {activeTab === 'dashboard' ? t.overview : activeTab === 'orders' ? t.manageOrders : activeTab === 'customers' ? (t.customerCRM || 'Customer 360 & CRM') : (t.expenseTracker || 'Expense Tracker')}
                     </p>
                   </div>
                 </div>
@@ -287,29 +335,50 @@ export default function App() {
 
               {activeTab === 'dashboard' ? (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
-                    <DashboardCard title={t.totalStock} value={metrics.totalInStock.toLocaleString()} icon="box" index={0} />
-                    <DashboardCard title={t.totalSold} value={metrics.totalSoldUnits.toLocaleString()} icon="cart" index={1} />
-                    <DashboardCard title={t.totalRevenue} value={formatEGP(metrics.totalRevenue)} icon="dollar" index={2} />
-                    <DashboardCard title={t.netProfit} value={formatEGP(metrics.totalProfit)} icon="chart" index={3} />
-                    <DashboardCard title={t.cashWithShipping} value={formatEGP(metrics.cashWithShipping)} icon="truck" index={4} />
-                    <DashboardCard title={t.cashInTreasury} value={formatEGP(metrics.cashInTreasury)} icon="wallet" index={5} />
-                    <DashboardCard title={t.returnLosses} value={formatEGP(metrics.returnLosses)} icon="alert" index={6} />
-                  </div>
+                  {userRole === 'operations' ? (
+                    <>
+                      <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center gap-3">
+                        <ShieldAlert size={20} className="shrink-0 text-amber-600" />
+                        <div className="text-xs">
+                          <span className="font-bold">{t.roleOperations}:</span> {t.restrictedAccess}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                        <DashboardCard title={t.totalStock} value={metrics.totalInStock.toLocaleString()} icon="box" index={0} />
+                        <DashboardCard title={t.totalSold} value={metrics.totalSoldUnits.toLocaleString()} icon="cart" index={1} />
+                        <DashboardCard title={t.orders} value={orders.filter(o => o.status !== 'Cancelled').length.toLocaleString()} icon="truck" index={2} />
+                        <DashboardCard title={t.products || 'Products'} value={products.length.toLocaleString()} icon="box" index={3} />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
+                        <DashboardCard title={t.totalStock} value={metrics.totalInStock.toLocaleString()} icon="box" index={0} />
+                        <DashboardCard title={t.totalSold} value={metrics.totalSoldUnits.toLocaleString()} icon="cart" index={1} />
+                        <DashboardCard title={t.totalRevenue} value={formatEGP(metrics.totalRevenue)} icon="dollar" index={2} />
+                        <DashboardCard title={t.netProfit} value={formatEGP(metrics.totalProfit)} icon="chart" index={3} />
+                        <DashboardCard title={t.cashWithShipping} value={formatEGP(metrics.cashWithShipping)} icon="truck" index={4} />
+                        <DashboardCard title={t.cashInTreasury} value={formatEGP(metrics.cashInTreasury)} icon="wallet" index={5} />
+                        <DashboardCard title={t.returnLosses} value={formatEGP(metrics.returnLosses)} icon="alert" index={6} />
+                      </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-                    <div className="lg:col-span-2">
-                      <ProfitChart products={products} />
-                    </div>
-                    <div className="lg:col-span-1">
-                      <BreakEvenCard breakEvenPoint={metrics.breakEvenPoint} deliveredItemsSold={metrics.deliveredItemsSold} />
-                    </div>
-                  </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                        <div className="lg:col-span-2">
+                          <ProfitChart products={products} />
+                        </div>
+                        <div className="lg:col-span-1">
+                          <BreakEvenCard breakEvenPoint={metrics.breakEvenPoint} deliveredItemsSold={metrics.deliveredItemsSold} />
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   <InventoryTable onEdit={handleEdit} />
                 </>
               ) : activeTab === 'orders' ? (
                 <OrdersView />
+              ) : activeTab === 'customers' ? (
+                <CustomersView />
               ) : (
                 <FinanceView />
               )}

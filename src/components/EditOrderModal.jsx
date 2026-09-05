@@ -49,6 +49,7 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
 
   const subtotal = useMemo(() => {
     return items.reduce((sum, item) => {
+      if (item.itemStatus === 'returned') return sum;
       const product = products.find(p => p.id === item.productId);
       if (product) {
         return sum + (product.sellingPrice * item.qty);
@@ -106,6 +107,8 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
       return;
     }
 
+    const hasReturnedItems = validItems.some(i => i.itemStatus === 'returned');
+
     const updatedData = {
       customerName,
       phone,
@@ -119,7 +122,8 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
         value: Number(discountValue) || 0,
         amount: discountAmount
       },
-      total
+      total,
+      orderType: hasReturnedItems ? 'partial_delivery' : (orderToEdit.orderType || 'standard')
     };
 
     updateOrder(orderToEdit.id, updatedData);
@@ -229,10 +233,11 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
                               )}
                             </div>
                             <select value={item.size} onChange={e => updateItem(index, 'size', e.target.value)} className="w-full h-11 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start">
-                              {['M', 'L', 'XL', 'XXL'].map(sz => {
+                              {(selectedProduct && Object.keys(selectedProduct.initialStock || {}).length > 0 ? Object.keys(selectedProduct.initialStock) : ['M', 'L', 'XL', 'XXL']).map(sz => {
                                 const szStock = selectedProduct ? getStockForSize(selectedProduct, sz) : null;
+                                const isOOS = szStock !== null && szStock <= 0;
                                 return (
-                                  <option key={sz} value={sz}>
+                                  <option key={sz} value={sz} disabled={isOOS}>
                                     {sz} {selectedProduct ? (szStock > 0 ? `(${szStock})` : `(${t.outOfStock})`) : ''}
                                   </option>
                                 );
@@ -243,6 +248,27 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
                             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-start">{t.qty}</label>
                             <input type="number" min="1" value={item.qty} onChange={e => updateItem(index, 'qty', e.target.value)} className="w-full h-11 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start" />
                           </div>
+
+                          {/* Item Status Toggle for Partial Delivery */}
+                          <div className="flex items-center bg-white p-0.5 rounded-lg border border-slate-200 shrink-0 h-11">
+                            <button
+                              type="button"
+                              onClick={() => updateItem(index, 'itemStatus', 'accepted')}
+                              className={`px-2 h-full rounded text-[11px] font-bold transition-colors ${item.itemStatus !== 'returned' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-700'}`}
+                              title={t.accepted}
+                            >
+                              {t.accepted}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateItem(index, 'itemStatus', 'returned')}
+                              className={`px-2 h-full rounded text-[11px] font-bold transition-colors ${item.itemStatus === 'returned' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-slate-700'}`}
+                              title={t.itemReturned}
+                            >
+                              {t.itemReturned}
+                            </button>
+                          </div>
+
                           <button type="button" onClick={() => removeItem(index)} disabled={items.length === 1} className="h-11 px-3 text-slate-400 hover:text-red-500 disabled:opacity-30 transition-colors flex items-center justify-center min-w-[40px]">
                             <Trash2 size={16} />
                           </button>

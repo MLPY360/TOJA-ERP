@@ -48,6 +48,14 @@ export const useStore = create((set, get) => ({
   expenses: [],
   partners: [],
   withdrawals: [],
+  inventoryMovements: [],
+  userRole: (() => {
+    try {
+      return localStorage.getItem('toja_user_role') || 'admin';
+    } catch {
+      return 'admin';
+    }
+  })(),
   currentUser: (() => {
     try {
       const raw = localStorage.getItem('toja_user');
@@ -120,7 +128,19 @@ export const useStore = create((set, get) => ({
       set({ withdrawals });
     });
 
+    onSnapshot(query(collection(db, "inventory_movements"), orderBy("timestamp", "desc")), (snapshot) => {
+      const inventoryMovements = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      set({ inventoryMovements });
+    });
+
     set({ listenersInitialized: true });
+  },
+
+  setUserRole: (role) => {
+    set({ userRole: role });
+    try {
+      localStorage.setItem('toja_user_role', role);
+    } catch {}
   },
 
   toggleLanguage: () => {
@@ -189,18 +209,144 @@ export const useStore = create((set, get) => ({
     }
   },
 
-  reportDefectiveItem: async (id, size) => {
-    const productRef = doc(db, "products", id);
-    const productSnap = await getDoc(productRef);
-    if (productSnap.exists()) {
-      const data = productSnap.data();
-      const currentStock = data.initialStock[size] - data.sold[size];
-      if (currentStock > 0) {
-        await updateDoc(productRef, {
-          [`initialStock.${size}`]: data.initialStock[size] - 1
-        });
-        get().logActivity(`تم تسجيل قطعة تالفة: ${data.name} (مقاس ${size})`)
+  logInventoryMovement: async ({
+    productId,
+    productName,
+    sku,
+    size,
+    changeType,
+    quantityDelta,
+    previousStock = 0,
+    newStock = 0,
+    relatedOrderId = null,
+    reason = '',
+    costImpactEGP = 0
+  }) => {
+    try {
+      const user = get().currentUser;
+      const movement = {
+        productId,
+        productName: productName || '',
+        sku: sku || '',
+        size: size || 'M',
+        changeType,
+        quantityDelta: Number(quantityDelta) || 0,
+        previousStock: Number(previousStock) || 0,
+        newStock: Number(newStock) || 0,
+        relatedOrderId: relatedOrderId || null,
+        reason: reason || '',
+        costImpactEGP: Number(costImpactEGP) || 0,
+        performedBy: {
+          uid: user?.id || 'system',
+          name: user?.name || 'System',
+          email: user?.email || ''
+        },
+        timestamp: new Date().toISOString()
+      };
+      await addDoc(collection(db, "inventory_movements"), movement);
+    } catch (error) {
+      console.error("Failed to log inventory movement:", error);
+    }
+  },
+
+  reportDefectiveItem: async (id, size, qty = 1, reason = 'Defective garment') => {
+    try {
+      const productRef = doc(db, "products", id);
+      const productSnap = await getDoc(productRef);
+      if (productSnap.exists()) {
+        const data = productSnap.data();
+        const currentInitial = (data.initialStock && data.initialStock[size]) || 0;
+        const currentSold = (data.sold && data.sold[size]) || 0;
+        const availableStock = currentInitial - currentSold;
+        const deductQty = Math.min(availableStock > 0 ? availableStock : qty, qty);
+
+        if (deductQty > 0) {
+          const newInitial = Math.max(0, currentInitial - deductQty);
+          await updateDoc(productRef, {
+            [`initialStock.${size}`]: newInitial
+          });
+
+          // Post expense automatically to reflect write-off in Net Profit
+          const costPrice = Number(data.costPrice) || 0;
+          const costImpact = costPrice * deductQty;
+          if (costImpact > 0) {
+            await get().addExpense({
+              category: 'Defective Stock Write-Off',
+              amount: costImpact,
+              date: new Date().toISOString().split('T')[0],
+              description: `Defective write-off: ${data.name} (${size} x${deductQty}) - ${reason}`
+            });
+          }
+
+          // Log movement in inventory_movements ledger
+          await get().logInventoryMovement({
+            productId: id,
+            productName: data.name,
+            sku: data.sku,
+            size,
+            changeType: 'DEFECT_WRITEOFF',
+            quantityDelta: -deductQty,
+            previousStock: availableStock,
+            newStock: availableStock - deductQty,
+            reason,
+            costImpactEGP: costImpact
+          });
+
+          get().logActivity(`تم تسجيل إهلاك تالف: ${data.name} (مقاس ${size} × ${deductQty}) - تكلفة: ${costImpact} ج.م`);
+        }
       }
+    } catch (error) {
+      console.error("Failed to report defective item:", error);
+    }
+  },
+
+  adjustStock: async ({ productId, size, delta, changeType = 'AUDIT_CORRECTION', reason = '' }) => {
+    try {
+      const productRef = doc(db, "products", productId);
+      const productSnap = await getDoc(productRef);
+      if (!productSnap.exists()) return;
+
+      const data = productSnap.data();
+      const currentInitial = (data.initialStock && data.initialStock[size]) || 0;
+      const currentSold = (data.sold && data.sold[size]) || 0;
+      const currentAvailable = currentInitial - currentSold;
+      const newInitial = Math.max(0, currentInitial + delta);
+
+      await updateDoc(productRef, {
+        [`initialStock.${size}`]: newInitial
+      });
+
+      const costPrice = Number(data.costPrice) || 0;
+      let costImpact = 0;
+
+      if (changeType === 'DEFECT_WRITEOFF' && delta < 0) {
+        costImpact = costPrice * Math.abs(delta);
+        await get().addExpense({
+          category: 'Defective Stock Write-Off',
+          amount: costImpact,
+          date: new Date().toISOString().split('T')[0],
+          description: `Defective write-off: ${data.name} (${size} x${Math.abs(delta)}) - ${reason}`
+        });
+      }
+
+      await get().logInventoryMovement({
+        productId,
+        productName: data.name,
+        sku: data.sku,
+        size,
+        changeType,
+        quantityDelta: delta,
+        previousStock: currentAvailable,
+        newStock: currentAvailable + delta,
+        reason,
+        costImpactEGP: costImpact
+      });
+
+      get().logActivity(`Adjusted stock for ${data.name} (${size}): ${delta > 0 ? `+${delta}` : delta} [${changeType}]`);
+      return { success: true };
+    } catch (error) {
+      console.error("Failed to adjust stock:", error);
+      return { success: false, error };
     }
   },
 
@@ -563,6 +709,238 @@ export const useStore = create((set, get) => ({
       get().logActivity(`Deleted an internal note from order ${order.displayId || orderId}`);
     } catch (error) {
       console.error("Failed to delete order note:", error);
+    }
+  },
+
+  createExchangeOrder: async ({ parentOrder, incomingItem, outgoingItem, exchangeShippingFee = 0, notes = '' }) => {
+    try {
+      const displayId = `EXC-${Date.now().toString().slice(-4)}`;
+      const replacementProduct = get().products.find(p => p.id === outgoingItem.productId);
+
+      // 1. Decrement outgoing replacement item from inventory
+      if (replacementProduct) {
+        const productRef = doc(db, 'products', replacementProduct.id);
+        const productSnap = await getDoc(productRef);
+        if (productSnap.exists()) {
+          const pData = productSnap.data();
+          const currentSold = pData.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
+          const qty = Number(outgoingItem.qty) || 1;
+          await updateDoc(productRef, {
+            [`sold.${outgoingItem.size}`]: (currentSold[outgoingItem.size] || 0) + qty
+          });
+
+          await get().logInventoryMovement({
+            productId: replacementProduct.id,
+            productName: replacementProduct.name,
+            sku: replacementProduct.sku,
+            size: outgoingItem.size,
+            changeType: 'EXCHANGE_OUT',
+            quantityDelta: -qty,
+            relatedOrderId: displayId,
+            reason: `Exchange replacement for parent: ${parentOrder.displayId || parentOrder.id}`
+          });
+        }
+      }
+
+      // 2. Restock incoming returned item if restockImmediately is true
+      if (incomingItem && incomingItem.productId) {
+        const returnedProduct = get().products.find(p => p.id === incomingItem.productId);
+        if (returnedProduct) {
+          const returnedRef = doc(db, 'products', returnedProduct.id);
+          const returnedSnap = await getDoc(returnedRef);
+          if (returnedSnap.exists()) {
+            const rData = returnedSnap.data();
+            const currentSold = rData.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
+            const retQty = Number(incomingItem.qty) || 1;
+            await updateDoc(returnedRef, {
+              [`sold.${incomingItem.size}`]: Math.max(0, (currentSold[incomingItem.size] || 0) - retQty)
+            });
+
+            await get().logInventoryMovement({
+              productId: returnedProduct.id,
+              productName: returnedProduct.name,
+              sku: returnedProduct.sku,
+              size: incomingItem.size,
+              changeType: 'EXCHANGE_IN',
+              quantityDelta: retQty,
+              relatedOrderId: displayId,
+              reason: `Returned item from exchange (Parent: ${parentOrder.displayId || parentOrder.id})`
+            });
+          }
+        }
+      }
+
+      // 3. Create exchange child order
+      const outQty = Number(outgoingItem.qty) || 1;
+      const unitPrice = Number(replacementProduct?.sellingPrice || outgoingItem.sellingPrice || 0);
+      const subtotal = unitPrice * outQty;
+      const fee = Number(exchangeShippingFee) || 0;
+      const total = fee; // Customer only pays the exchange shipping fee for 1:1 size swaps
+
+      const newExchangeOrder = {
+        customerName: parentOrder.customerName || '',
+        phone: parentOrder.phone || '',
+        governorate: parentOrder.governorate || '',
+        address: parentOrder.address || '',
+        orderType: 'exchange',
+        parentOrderId: parentOrder.id,
+        parentOrderDisplayId: parentOrder.displayId || parentOrder.orderId || parentOrder.id,
+        items: [{
+          productId: outgoingItem.productId,
+          productName: replacementProduct?.name || 'Replacement Item',
+          size: outgoingItem.size,
+          qty: outQty,
+          unitPrice
+        }],
+        incomingItem: {
+          productId: incomingItem?.productId || '',
+          productName: incomingItem?.productName || '',
+          size: incomingItem?.size || 'M',
+          qty: Number(incomingItem?.qty) || 1,
+          restocked: true
+        },
+        shippingFee: fee,
+        subtotal,
+        discount: { type: 'fixed', value: 0, amount: 0 },
+        total,
+        status: 'Pending',
+        displayId,
+        createdAt: new Date().toISOString(),
+        createdBy: get().currentUser?.name || 'System',
+        notes: notes ? [{
+          text: notes,
+          author: get().currentUser?.name || 'System',
+          createdAt: new Date().toISOString()
+        }] : []
+      };
+
+      await addDoc(collection(db, 'orders'), newExchangeOrder);
+
+      // 4. Append note to parent order
+      await get().addOrderNote(
+        parentOrder.id,
+        `تم إنشاء طلب استبدال مرتبط برقم: ${displayId} (مقاس بديل: ${outgoingItem.size} مقابل ${incomingItem?.size})`
+      );
+
+      get().logActivity(`Created exchange order ${displayId} for parent ${parentOrder.displayId || parentOrder.id}`);
+      return { success: true, displayId };
+    } catch (error) {
+      console.error("Failed to create exchange order:", error);
+      return { success: false, error };
+    }
+  },
+
+  updatePartialDelivery: async (orderId, itemsWithStatus, notes = '') => {
+    try {
+      const order = [...get().orders, ...(get().deletedOrders || [])].find(o => o.id === orderId);
+      if (!order) return;
+
+      let newSubtotal = 0;
+      for (const item of itemsWithStatus) {
+        const itemQty = Number(item.qty) || Number(item.quantity) || 1;
+        const product = get().products.find(p => p.id === item.productId);
+        const price = Number(item.unitPrice || product?.sellingPrice || 0);
+
+        if (item.itemStatus === 'accepted' || !item.itemStatus) {
+          newSubtotal += price * itemQty;
+        } else if (item.itemStatus === 'returned') {
+          // Revert sold stock for this returned line item
+          if (product) {
+            const productRef = doc(db, 'products', product.id);
+            const productSnap = await getDoc(productRef);
+            if (productSnap.exists()) {
+              const pData = productSnap.data();
+              const currentSold = pData.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
+              await updateDoc(productRef, {
+                [`sold.${item.size}`]: Math.max(0, (currentSold[item.size] || 0) - itemQty)
+              });
+
+              await get().logInventoryMovement({
+                productId: product.id,
+                productName: product.name,
+                sku: product.sku,
+                size: item.size,
+                changeType: 'ORDER_RETURN',
+                quantityDelta: itemQty,
+                relatedOrderId: order.displayId || order.id,
+                reason: `Partial return for order ${order.displayId || order.id}`
+              });
+            }
+          }
+        }
+      }
+
+      const shipping = Number(order.shippingFee ?? order.totals?.shipping ?? 0);
+      const discountAmt = Number(order.discount?.amount || 0);
+      const newTotal = Math.max(0, newSubtotal - discountAmt + shipping);
+
+      const orderRef = doc(db, 'orders', orderId);
+      await updateDoc(orderRef, {
+        items: itemsWithStatus,
+        subtotal: newSubtotal,
+        total: newTotal,
+        orderType: 'partial_delivery',
+        partialDeliveryProcessedAt: new Date().toISOString()
+      });
+
+      if (notes) {
+        await get().addOrderNote(orderId, notes);
+      } else {
+        await get().addOrderNote(orderId, `تم تسجيل تسليم جزئي وتحديث الإجمالي إلى ${newTotal} ج.م واسترجاع المرتجعات للمخزون.`);
+      }
+
+      get().logActivity(`Processed partial delivery for order ${order.displayId || orderId}: New total ${newTotal} EGP`);
+      return { success: true };
+    } catch (error) {
+      console.error("Failed to process partial delivery:", error);
+      return { success: false, error };
+    }
+  },
+
+  bulkReconcileCourier: async ({ batchName, carrierName, matchedOrders, feeVarianceTotal = 0 }) => {
+    try {
+      const now = new Date().toISOString();
+      const userName = get().currentUser?.name || 'System';
+
+      for (const item of matchedOrders) {
+        const orderRef = doc(db, 'orders', item.orderId);
+        await updateDoc(orderRef, {
+          status: 'Delivered - Collected',
+          courierReconciliation: {
+            carrierName: carrierName || 'Courier',
+            batchName: batchName || `Batch-${now.slice(0, 10)}`,
+            collectedAmount: Number(item.collectedAmount) || 0,
+            courierFee: Number(item.courierFee) || 0,
+            reconciledAt: now,
+            reconciledBy: userName
+          }
+        });
+      }
+
+      if (feeVarianceTotal > 0) {
+        await get().addExpense({
+          category: 'Shipping Discrepancy',
+          amount: feeVarianceTotal,
+          date: now.split('T')[0],
+          description: `Courier fee variance for batch ${batchName} (${carrierName})`
+        });
+      }
+
+      // Save settlement batch log
+      await addDoc(collection(db, 'courier_settlements'), {
+        batchName: batchName || `Batch-${now.slice(0, 10)}`,
+        carrierName: carrierName || 'Courier',
+        reconciledCount: matchedOrders.length,
+        feeVarianceTotal,
+        reconciledAt: now,
+        reconciledBy: userName
+      });
+
+      get().logActivity(`Reconciled courier settlement: ${matchedOrders.length} orders marked Delivered - Collected (${carrierName})`);
+      return { success: true };
+    } catch (error) {
+      console.error("Failed to reconcile courier settlement:", error);
+      return { success: false, error };
     }
   }
 }))

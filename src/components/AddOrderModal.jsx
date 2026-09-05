@@ -161,7 +161,8 @@ export default function AddOrderModal({ isOpen, onClose }) {
       if (product) {
         const currentStock = getStockForSize(product, newItems[index].size);
         if (currentStock <= 0) {
-          const firstAvailable = ['M', 'L', 'XL', 'XXL'].find(s => getStockForSize(product, s) > 0);
+          const availableSizes = Object.keys(product.initialStock || {});
+          const firstAvailable = (availableSizes.length > 0 ? availableSizes : ['M', 'L', 'XL', 'XXL']).find(s => getStockForSize(product, s) > 0);
           if (firstAvailable) {
             newItems[index].size = firstAvailable;
           }
@@ -269,7 +270,7 @@ export default function AddOrderModal({ isOpen, onClose }) {
                               )}
                             </div>
                             <select value={item.size} onChange={e => updateItem(index, 'size', e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start">
-                              {['M', 'L', 'XL', 'XXL'].map(sz => {
+                              {(selectedProduct && Object.keys(selectedProduct.initialStock || {}).length > 0 ? Object.keys(selectedProduct.initialStock) : ['M', 'L', 'XL', 'XXL']).map(sz => {
                                 const szStock = selectedProduct ? getStockForSize(selectedProduct, sz) : null;
                                 const isOOS = szStock !== null && szStock <= 0;
                                 return (

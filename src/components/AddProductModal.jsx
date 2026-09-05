@@ -1,94 +1,120 @@
-import { useState, useEffect } from 'react'
-import { X, ImagePlus, Loader2 } from 'lucide-react'
-import { useStore } from '../store/useStore'
-import { uploadImageToImgBB } from '../utils/imgbb'
-import { translations } from '../translations'
+import { useState, useEffect } from 'react';
+import { X, ImagePlus, Loader2, Plus, Trash2 } from 'lucide-react';
+import { useStore } from '../store/useStore';
+import { uploadImageToImgBB } from '../utils/imgbb';
+import { translations } from '../translations';
+
+const DEFAULT_PRESETS = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', 'Oversize', 'Free Size'];
 
 export default function AddProductModal({ isOpen, onClose, editProduct }) {
-  const { addProduct, updateProduct, language } = useStore()
-  const t = translations[language]
-  const isEditing = !!editProduct
-  const [isUploading, setIsUploading] = useState(false)
+  const { addProduct, updateProduct, language } = useStore();
+  const t = translations[language];
+  const isEditing = !!editProduct;
+  const [isUploading, setIsUploading] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
     sku: '',
     imageUrl: '',
-    initialStockM: '',
-    initialStockL: '',
-    initialStockXL: '',
-    initialStockXXL: '',
     costPrice: '',
-    sellingPrice: '',
-  })
+    sellingPrice: ''
+  });
+
+  const [sizes, setSizes] = useState({ M: 0, L: 0, XL: 0, XXL: 0 });
+  const [customSizeInput, setCustomSizeInput] = useState('');
 
   useEffect(() => {
     if (editProduct) {
       setForm({
-        name: editProduct.name,
-        sku: editProduct.sku,
+        name: editProduct.name || '',
+        sku: editProduct.sku || '',
         imageUrl: editProduct.imageUrl || '',
-        initialStockM: String(editProduct.initialStock?.M || 0),
-        initialStockL: String(editProduct.initialStock?.L || 0),
-        initialStockXL: String(editProduct.initialStock?.XL || 0),
-        initialStockXXL: String(editProduct.initialStock?.XXL || 0),
-        costPrice: String(editProduct.costPrice),
-        sellingPrice: String(editProduct.sellingPrice),
-      })
+        costPrice: String(editProduct.costPrice || ''),
+        sellingPrice: String(editProduct.sellingPrice || '')
+      });
+      const loadedSizes = editProduct.initialStock || {};
+      if (Object.keys(loadedSizes).length > 0) {
+        setSizes({ ...loadedSizes });
+      } else {
+        setSizes({ M: 0, L: 0, XL: 0, XXL: 0 });
+      }
     } else {
-      setForm({ name: '', sku: '', imageUrl: '', initialStockM: '', initialStockL: '', initialStockXL: '', initialStockXXL: '', costPrice: '', sellingPrice: '' })
+      setForm({ name: '', sku: '', imageUrl: '', costPrice: '', sellingPrice: '' });
+      setSizes({ M: 0, L: 0, XL: 0, XXL: 0 });
     }
-  }, [editProduct, isOpen])
+  }, [editProduct, isOpen]);
 
-  if (!isOpen) return null
+  if (!isOpen) return null;
 
   const handleChange = (field) => (e) => {
-    setForm((prev) => ({ ...prev, [field]: e.target.value }))
-  }
+    setForm((prev) => ({ ...prev, [field]: e.target.value }));
+  };
+
+  const handleStockChange = (size, val) => {
+    const num = Math.max(0, parseInt(val) || 0);
+    setSizes(prev => ({ ...prev, [size]: num }));
+  };
+
+  const addSize = (sizeName) => {
+    const clean = sizeName.trim().toUpperCase();
+    if (!clean) return;
+    setSizes(prev => ({ ...prev, [clean]: prev[clean] !== undefined ? prev[clean] : 0 }));
+    setCustomSizeInput('');
+  };
+
+  const removeSize = (sizeName) => {
+    setSizes(prev => {
+      const copy = { ...prev };
+      delete copy[sizeName];
+      return copy;
+    });
+  };
 
   const handleImageUpload = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    setIsUploading(true)
+    const file = e.target.files[0];
+    if (!file) return;
+    setIsUploading(true);
     try {
-      const url = await uploadImageToImgBB(file)
-      setForm((prev) => ({ ...prev, imageUrl: url }))
+      const url = await uploadImageToImgBB(file);
+      setForm((prev) => ({ ...prev, imageUrl: url }));
     } catch (err) {
-      alert("Failed to upload image.")
+      alert("Failed to upload image.");
     } finally {
-      setIsUploading(false)
+      setIsUploading(false);
     }
-  }
+  };
 
   const handleSubmit = (e) => {
-    e.preventDefault()
-    if (!form.name.trim() || !form.sku.trim()) return
+    e.preventDefault();
+    if (!form.name.trim() || !form.sku.trim()) return;
+
+    const initialStock = {};
+    Object.entries(sizes).forEach(([sz, qty]) => {
+      initialStock[sz] = parseInt(qty, 10) || 0;
+    });
 
     const data = {
       name: form.name.trim(),
       sku: form.sku.trim(),
       imageUrl: form.imageUrl,
-      initialStock: {
-        M: parseInt(form.initialStockM, 10) || 0,
-        L: parseInt(form.initialStockL, 10) || 0,
-        XL: parseInt(form.initialStockXL, 10) || 0,
-        XXL: parseInt(form.initialStockXXL, 10) || 0,
-      },
+      initialStock,
       costPrice: parseFloat(form.costPrice) || 0,
-      sellingPrice: parseFloat(form.sellingPrice) || 0,
-    }
+      sellingPrice: parseFloat(form.sellingPrice) || 0
+    };
     
     if (isEditing) {
-      updateProduct(editProduct.id, data)
+      updateProduct(editProduct.id, data);
     } else {
-      addProduct(data)
+      addProduct(data);
     }
-    onClose()
-  }
+    onClose();
+  };
+
+  const currentSizeKeys = Object.keys(sizes);
 
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-slate-100 flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0">
           <h2 className="text-xl font-bold text-[#181E1C]">
@@ -155,53 +181,92 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
               </div>
             </div>
 
-            <div className="col-span-2">
-              <label className="text-sm font-semibold text-slate-700 mb-2 block">Initial Stock by Size</label>
-              <div className="grid grid-cols-4 gap-3">
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs font-bold text-slate-400 text-center">M</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.initialStockM}
-                    onChange={handleChange('initialStockM')}
-                    placeholder="0"
-                    className="h-10 px-2 text-center rounded-lg border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:ring-2 focus:ring-[#597867]/20 focus:border-[#597867] transition-all outline-none"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs font-bold text-slate-400 text-center">L</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.initialStockL}
-                    onChange={handleChange('initialStockL')}
-                    placeholder="0"
-                    className="h-10 px-2 text-center rounded-lg border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:ring-2 focus:ring-[#597867]/20 focus:border-[#597867] transition-all outline-none"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs font-bold text-slate-400 text-center">XL</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.initialStockXL}
-                    onChange={handleChange('initialStockXL')}
-                    placeholder="0"
-                    className="h-10 px-2 text-center rounded-lg border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:ring-2 focus:ring-[#597867]/20 focus:border-[#597867] transition-all outline-none"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs font-bold text-slate-400 text-center">XXL</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.initialStockXXL}
-                    onChange={handleChange('initialStockXXL')}
-                    placeholder="0"
-                    className="h-10 px-2 text-center rounded-lg border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:ring-2 focus:ring-[#597867]/20 focus:border-[#597867] transition-all outline-none"
-                  />
-                </div>
+            {/* Dynamic Sizes Management Section */}
+            <div className="col-span-2 bg-slate-50/80 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  {t.dynamicSizes} ({currentSizeKeys.length})
+                </label>
+                <span className="text-[10px] text-slate-500 font-semibold">{t.sizePresets}</span>
+              </div>
+
+              {/* Quick Presets Pills */}
+              <div className="flex flex-wrap gap-1.5">
+                {DEFAULT_PRESETS.map((preset) => {
+                  const isAdded = sizes[preset] !== undefined;
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => addSize(preset)}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                        isAdded
+                          ? 'bg-[#181E1C] text-white shadow-sm'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {isAdded ? `✓ ${preset}` : `+ ${preset}`}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Custom Size Adder */}
+              <div className="flex gap-2 pt-1">
+                <input
+                  type="text"
+                  placeholder={t.enterSizeName}
+                  value={customSizeInput}
+                  onChange={(e) => setCustomSizeInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addSize(customSizeInput);
+                    }
+                  }}
+                  className="flex-1 h-9 px-3 text-xs rounded-lg border border-slate-200 bg-white outline-none focus:border-[#597867]"
+                />
+                <button
+                  type="button"
+                  onClick={() => addSize(customSizeInput)}
+                  className="px-3 h-9 bg-[#597867] hover:bg-[#465f52] text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                >
+                  <Plus size={14} />
+                  <span>{t.addCustomSize}</span>
+                </button>
+              </div>
+
+              {/* Active Sizes Stock Inputs Grid */}
+              <div className="pt-2">
+                {currentSizeKeys.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-3 text-center">No sizes configured. Click presets above to add sizes.</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {currentSizeKeys.map((size) => (
+                      <div key={size} className="bg-white p-2.5 rounded-xl border border-slate-200 flex flex-col gap-1 relative group">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-[#181E1C]">{size}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeSize(size)}
+                            className="text-slate-400 hover:text-red-500 transition-colors p-0.5"
+                            title={t.removeSize}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          value={sizes[size]}
+                          onChange={(e) => handleStockChange(size, e.target.value)}
+                          placeholder="0"
+                          className="h-8 px-2 text-center rounded border border-slate-200 bg-slate-50 text-xs font-bold focus:bg-white focus:border-[#597867] outline-none"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -253,5 +318,5 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
         </form>
       </div>
     </div>
-  )
+  );
 }

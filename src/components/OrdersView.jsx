@@ -15,13 +15,18 @@ import {
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  ArrowLeftRight,
+  Split,
+  RefreshCw,
+  Printer
 } from 'lucide-react';
 import { useStore, normalizePhone } from '../store/useStore';
 import { translations } from '../translations';
 import ExportOrdersModal from './ExportOrdersModal';
 import EditOrderModal from './EditOrderModal';
 import OrderInvoiceModal from './OrderInvoiceModal';
+import ThermalShippingLabelModal from './ThermalShippingLabelModal';
 import ImageLightbox from './ImageLightbox';
 
 const getStatusBadge = (status) => {
@@ -400,6 +405,379 @@ function WhatsAppModal({ isOpen, onClose, order, language }) {
   );
 }
 
+function CreateExchangeModal({ isOpen, onClose, parentOrder, products, language, onCreateExchange }) {
+  const t = translations[language];
+  if (!isOpen || !parentOrder) return null;
+
+  const parentItems = parentOrder.items || [];
+  const [incomingIndex, setIncomingIndex] = useState(0);
+  const [incomingQty, setIncomingQty] = useState(1);
+
+  const [outgoingProductId, setOutgoingProductId] = useState(products[0]?.id || '');
+  const [outgoingSize, setOutgoingSize] = useState('M');
+  const [outgoingQty, setOutgoingQty] = useState(1);
+  const [exchangeShippingFee, setExchangeShippingFee] = useState('35');
+  const [exchangeReason, setExchangeReason] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const selectedIncoming = parentItems[incomingIndex] || parentItems[0] || {};
+  const outgoingProduct = products.find(p => p.id === outgoingProductId) || products[0];
+
+  const getStockForSize = (product, size) => {
+    if (!product) return 0;
+    const initial = (product.initialStock && product.initialStock[size]) || 0;
+    const sold = (product.sold && product.sold[size]) || 0;
+    return Math.max(0, initial - sold);
+  };
+
+  const availableStock = outgoingProduct ? getStockForSize(outgoingProduct, outgoingSize) : 0;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!outgoingProductId) {
+      alert("Please select a replacement product.");
+      return;
+    }
+    if (availableStock <= 0) {
+      alert(`Replacement size (${outgoingSize}) is out of stock!`);
+      return;
+    }
+    if (outgoingQty > availableStock) {
+      alert(`Replacement quantity exceeds available stock (${availableStock})`);
+      return;
+    }
+
+    setIsSubmitting(true);
+    const res = await onCreateExchange({
+      parentOrder,
+      incomingItem: {
+        productId: selectedIncoming.productId || selectedIncoming.id || '',
+        productName: selectedIncoming.productName || 'Returned Item',
+        size: selectedIncoming.size || 'M',
+        qty: Number(incomingQty) || 1
+      },
+      outgoingItem: {
+        productId: outgoingProductId,
+        size: outgoingSize,
+        qty: Number(outgoingQty) || 1,
+        sellingPrice: Number(outgoingProduct?.sellingPrice) || 0
+      },
+      exchangeShippingFee: Number(exchangeShippingFee) || 0,
+      notes: exchangeReason
+    });
+
+    setIsSubmitting(false);
+    if (res?.success) {
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white w-full max-w-xl rounded-2xl p-5 sm:p-6 shadow-xl border border-slate-100 flex flex-col gap-4 text-start max-h-[92vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-purple-50 text-purple-600 rounded-xl">
+              <ArrowLeftRight size={22} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900">{t.createExchange}</h3>
+              <p className="text-xs text-slate-500 font-semibold">
+                {t.parentOrder}: {parentOrder.displayId || parentOrder.id} · {parentOrder.customerName}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {/* Incoming Item (To Return) */}
+          <div className="bg-red-50/50 p-3.5 rounded-xl border border-red-200/80 flex flex-col gap-2.5">
+            <span className="text-xs font-bold text-red-800 uppercase tracking-wider">
+              {t.incomingItemToReturn}
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="sm:col-span-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{t.product}</label>
+                <select
+                  value={incomingIndex}
+                  onChange={(e) => setIncomingIndex(Number(e.target.value))}
+                  className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:border-red-400"
+                >
+                  {parentItems.map((item, idx) => (
+                    <option key={idx} value={idx}>
+                      {item.productName || `Item #${idx + 1}`} - Size: {item.size} (Qty: {item.qty || 1})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{t.qty}</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={selectedIncoming?.qty || 1}
+                  value={incomingQty}
+                  onChange={(e) => setIncomingQty(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:border-red-400"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-red-600 font-medium">
+              ✓ {t.partialDeliveryNotice}
+            </p>
+          </div>
+
+          {/* Outgoing Replacement Item */}
+          <div className="bg-emerald-50/50 p-3.5 rounded-xl border border-emerald-200/80 flex flex-col gap-2.5">
+            <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">
+              {t.outgoingReplacementItem}
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="sm:col-span-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{t.product}</label>
+                <select
+                  value={outgoingProductId}
+                  onChange={(e) => setOutgoingProductId(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:border-emerald-500"
+                >
+                  {products.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">{t.size}</label>
+                  <span className={`text-[9px] font-extrabold px-1 rounded ${availableStock <= 0 ? 'bg-red-100 text-red-700' : 'text-emerald-700'}`}>
+                    {availableStock <= 0 ? t.outOfStock : `${availableStock} ${t.leftInStock}`}
+                  </span>
+                </div>
+                <select
+                  value={outgoingSize}
+                  onChange={(e) => setOutgoingSize(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:border-emerald-500"
+                >
+                  {['M', 'L', 'XL', 'XXL'].map(sz => {
+                    const st = outgoingProduct ? getStockForSize(outgoingProduct, sz) : 0;
+                    return (
+                      <option key={sz} value={sz} disabled={st <= 0}>
+                        {sz} ({st > 0 ? st : t.outOfStock})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Shipping Fee & Reason */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">{t.exchangeShippingFee} (EGP)</label>
+              <input
+                type="number"
+                min="0"
+                value={exchangeShippingFee}
+                onChange={(e) => setExchangeShippingFee(e.target.value)}
+                placeholder="e.g. 35"
+                className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-xs outline-none focus:border-[#597867] focus:bg-white"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">{t.exchangeReason}</label>
+              <input
+                type="text"
+                value={exchangeReason}
+                onChange={(e) => setExchangeReason(e.target.value)}
+                placeholder={t.exchangeReasonPlaceholder}
+                className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-xs outline-none focus:border-[#597867] focus:bg-white"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 mt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+            >
+              {t.cancel}
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting || availableStock <= 0}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl shadow-sm shadow-purple-600/20 transition-colors flex items-center gap-1.5"
+            >
+              <ArrowLeftRight size={15} />
+              {isSubmitting ? t.uploading || 'Creating...' : t.confirmExchange}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
+function PartialDeliveryModal({ isOpen, onClose, order, language, onUpdatePartialDelivery }) {
+  const t = translations[language];
+  if (!isOpen || !order) return null;
+
+  const [itemsStatus, setItemsStatus] = useState(
+    (order.items || []).map(item => ({
+      ...item,
+      itemStatus: item.itemStatus || 'accepted'
+    }))
+  );
+  const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const toggleItemStatus = (index, status) => {
+    const updated = [...itemsStatus];
+    updated[index].itemStatus = status;
+    setItemsStatus(updated);
+  };
+
+  const acceptedSubtotal = itemsStatus.reduce((sum, item) => {
+    if (item.itemStatus === 'accepted' || !item.itemStatus) {
+      const price = Number(item.unitPrice || item.sellingPrice || 0);
+      const qty = Number(item.qty || item.quantity || 1);
+      return sum + (price * qty);
+    }
+    return sum;
+  }, 0);
+
+  const shipping = Number(order.shippingFee ?? order.totals?.shipping ?? 0);
+  const calculatedTotal = acceptedSubtotal + shipping;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    await onUpdatePartialDelivery(order.id, itemsStatus, notes);
+    setIsSubmitting(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white w-full max-w-lg rounded-2xl p-5 sm:p-6 shadow-xl border border-slate-100 flex flex-col gap-4 text-start max-h-[92vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-orange-50 text-orange-600 rounded-xl">
+              <Split size={22} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900">{t.partialDelivery}</h3>
+              <p className="text-xs text-slate-500 font-semibold">
+                {order.displayId || order.id} · {order.customerName}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
+            <X size={18} />
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-500 font-medium">
+          {t.partialDeliveryNotice}
+        </p>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2.5 max-h-60 overflow-y-auto">
+            {itemsStatus.map((item, idx) => {
+              const isAccepted = item.itemStatus === 'accepted';
+              return (
+                <div key={idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">{item.productName || `Item #${idx + 1}`}</p>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Size: {item.size} · Qty: {item.qty || 1}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center bg-white p-1 rounded-lg border border-slate-200 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleItemStatus(idx, 'accepted')}
+                      className={`px-2.5 py-1 rounded text-xs font-bold transition-colors ${isAccepted ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      {t.accepted}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleItemStatus(idx, 'returned')}
+                      className={`px-2.5 py-1 rounded text-xs font-bold transition-colors ${!isAccepted ? 'bg-red-600 text-white' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      {t.itemReturned}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Recalculated Summary */}
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs flex flex-col gap-1.5">
+            <div className="flex justify-between text-slate-600">
+              <span>{t.subtotal}:</span>
+              <span className="font-bold">{acceptedSubtotal.toLocaleString('en-EG')} EGP</span>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <span>{t.shippingCost}:</span>
+              <span className="font-bold">{shipping} EGP</span>
+            </div>
+            <div className="flex justify-between text-base font-black text-[#597867] pt-1.5 border-t border-slate-200">
+              <span>{t.finalTotal}:</span>
+              <span>{calculatedTotal.toLocaleString('en-EG')} EGP</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-600 block mb-1">{t.internalNotes}</label>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Customer rejected size XL at door, kept size L"
+              className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-xs outline-none focus:border-[#597867] focus:bg-white"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+            >
+              {t.cancel}
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl shadow-sm shadow-orange-600/20 transition-colors flex items-center gap-1.5"
+            >
+              <Split size={15} />
+              {isSubmitting ? t.uploading || 'Processing...' : t.confirmPartialDelivery}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function OrdersView() {
   const {
     orders,
@@ -410,7 +788,9 @@ export default function OrdersView() {
     deleteOrder,
     restoreOrder,
     blacklist,
-    toggleBlacklistCustomer
+    toggleBlacklistCustomer,
+    createExchangeOrder,
+    updatePartialDelivery
   } = useStore();
 
   const t = translations[language];
@@ -426,6 +806,9 @@ export default function OrdersView() {
   const [orderToRestore, setOrderToRestore] = useState(null);
   const [whatsAppOrder, setWhatsAppOrder] = useState(null);
   const [blacklistCustomerModal, setBlacklistCustomerModal] = useState(null);
+  const [exchangeOrder, setExchangeOrder] = useState(null);
+  const [partialDeliveryOrder, setPartialDeliveryOrder] = useState(null);
+  const [thermalLabelOrder, setThermalLabelOrder] = useState(null);
 
   const toggleNotes = (orderId) => {
     setActiveNotesOrderIds(prev => ({
@@ -586,9 +969,9 @@ export default function OrdersView() {
                 transition={{ delay: index * 0.03 }}
                 className="p-4 flex flex-col gap-3 bg-white"
               >
-                {/* Card Header: Order ID, Date & Status Dropdown or Trash Badge */}
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-start">
+                {/* Card Header: Order ID, Badges & Status */}
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="text-start flex items-center gap-2 flex-wrap">
                     <button
                       type="button"
                       onClick={() => setInvoiceOrder(order)}
@@ -597,7 +980,17 @@ export default function OrdersView() {
                     >
                       {displayId}
                     </button>
-                    <p className="text-[10px] text-slate-400 font-medium mt-0.5">{formatDate(order.createdAt)}</p>
+                    {order.orderType === 'exchange' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-700 border border-purple-200">
+                        <ArrowLeftRight size={10} /> {t.exchangeOrderBadge}
+                      </span>
+                    )}
+                    {order.orderType === 'partial_delivery' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-orange-100 text-orange-700 border border-orange-200">
+                        <Split size={10} /> {t.partialDelivery}
+                      </span>
+                    )}
+                    <p className="text-[10px] text-slate-400 font-medium w-full">{formatDate(order.createdAt)}</p>
                   </div>
 
                   {viewMode === 'trash' ? (
@@ -645,7 +1038,6 @@ export default function OrdersView() {
                     {cPhone && (
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span className="text-[11px] font-bold text-slate-600">{cPhone}</span>
-                        {/* WhatsApp Template Selector Trigger */}
                         <button
                           type="button"
                           onClick={() => setWhatsAppOrder(order)}
@@ -654,7 +1046,6 @@ export default function OrdersView() {
                         >
                           <MessageCircle size={15} />
                         </button>
-                        {/* Customer Blacklist Manager Trigger */}
                         <button
                           type="button"
                           onClick={() => openBlacklistModal(order)}
@@ -669,6 +1060,11 @@ export default function OrdersView() {
                   {(cCity || cAddress) && (
                     <p className="text-[11px] text-slate-500 font-medium">
                       {cCity}{cCity && cAddress ? ' - ' : ''}{cAddress}
+                    </p>
+                  )}
+                  {order.parentOrderDisplayId && (
+                    <p className="text-[10px] text-purple-700 font-bold mt-0.5">
+                      {t.linkedToOrder}: #{order.parentOrderDisplayId}
                     </p>
                   )}
                 </div>
@@ -705,6 +1101,11 @@ export default function OrdersView() {
                               <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-[#597867]/10 text-[#597867]">
                                 x{item.qty || item.quantity || 1}
                               </span>
+                              {item.itemStatus === 'returned' && (
+                                <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-red-100 text-red-700">
+                                  {t.itemReturned}
+                                </span>
+                              )}
                               {product?.sellingPrice && (
                                 <span className="text-[10px] font-semibold text-slate-400">
                                   {product.sellingPrice} EGP
@@ -736,7 +1137,7 @@ export default function OrdersView() {
                 </div>
 
                 {/* Mobile Actions Toolbar */}
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100 flex-wrap gap-2">
                   <div className="text-[10px] text-slate-400 font-medium text-start">
                     {viewMode === 'trash' ? (
                       <span>{t.deletedBy}: {order.deletedBy || 'Admin'}</span>
@@ -747,7 +1148,6 @@ export default function OrdersView() {
 
                   <div className="flex items-center gap-1">
                     {viewMode === 'trash' ? (
-                      /* Restore Order Button */
                       <button
                         type="button"
                         onClick={() => setOrderToRestore(order)}
@@ -759,6 +1159,35 @@ export default function OrdersView() {
                       </button>
                     ) : (
                       <>
+                        {/* Exchange Action Button */}
+                        <button
+                          type="button"
+                          onClick={() => setExchangeOrder(order)}
+                          className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg min-h-[40px] min-w-[40px] flex items-center justify-center transition-colors"
+                          title={t.createExchange}
+                        >
+                          <ArrowLeftRight size={16} />
+                        </button>
+
+                        {/* Partial Delivery Action Button */}
+                        <button
+                          type="button"
+                          onClick={() => setPartialDeliveryOrder(order)}
+                          className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg min-h-[40px] min-w-[40px] flex items-center justify-center transition-colors"
+                          title={t.partialDelivery}
+                        >
+                          <Split size={16} />
+                        </button>
+
+                        {/* Thermal Shipping Label */}
+                        <button
+                          onClick={() => setThermalLabelOrder(order)}
+                          className="p-2 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center"
+                          title={t.printShippingLabel}
+                        >
+                          <Printer size={16} />
+                        </button>
+
                         {/* View Invoice */}
                         <button
                           onClick={() => setInvoiceOrder(order)}
@@ -871,14 +1300,26 @@ export default function OrdersView() {
                       className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors ${viewMode === 'trash' ? 'bg-red-50/20' : ''}`}
                     >
                       <td className="p-4 px-6 align-middle text-start">
-                        <button
-                          type="button"
-                          onClick={() => setInvoiceOrder(order)}
-                          className="font-extrabold text-[#181E1C] hover:text-[#597867] hover:underline transition-colors text-start cursor-pointer"
-                          title={t.orderDetails}
-                        >
-                          {displayId}
-                        </button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setInvoiceOrder(order)}
+                            className="font-extrabold text-[#181E1C] hover:text-[#597867] hover:underline transition-colors text-start cursor-pointer"
+                            title={t.orderDetails}
+                          >
+                            {displayId}
+                          </button>
+                          {order.orderType === 'exchange' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-700 border border-purple-200" title={`Parent: ${order.parentOrderDisplayId || order.parentOrderId}`}>
+                              <ArrowLeftRight size={10} /> {t.exchangeOrderBadge}
+                            </span>
+                          )}
+                          {order.orderType === 'partial_delivery' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-orange-100 text-orange-700 border border-orange-200">
+                              <Split size={10} /> {t.partialDelivery}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{formatDate(order.createdAt)}</p>
                       </td>
 
@@ -899,7 +1340,6 @@ export default function OrdersView() {
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           <p className="text-[11px] text-slate-500">{cPhone}</p>
-                          {/* WhatsApp Template Popover Trigger */}
                           <button
                             type="button"
                             onClick={() => setWhatsAppOrder(order)}
@@ -908,7 +1348,6 @@ export default function OrdersView() {
                           >
                             <MessageCircle size={14} />
                           </button>
-                          {/* Blacklist modal trigger */}
                           <button
                             type="button"
                             onClick={() => openBlacklistModal(order)}
@@ -923,6 +1362,11 @@ export default function OrdersView() {
                       <td className="p-4 align-middle text-start hidden md:table-cell">
                         <p className="font-semibold text-slate-700">{cCity}</p>
                         <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={cAddress}>{cAddress}</p>
+                        {order.parentOrderDisplayId && (
+                          <span className="text-[10px] text-purple-700 font-bold block mt-0.5">
+                            {t.linkedToOrder}: #{order.parentOrderDisplayId}
+                          </span>
+                        )}
                       </td>
 
                       <td className="p-4 align-middle text-start hidden md:table-cell">
@@ -945,7 +1389,14 @@ export default function OrdersView() {
                                 )}
                                 <div className="flex flex-col">
                                   <span className="text-[11px] font-bold text-slate-700 truncate max-w-[120px]">{product?.name || 'Unknown Product'}</span>
-                                  <span className="text-[10px] text-slate-500 font-medium">Size: {item.size} | Qty: {item.qty || item.quantity}</span>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[10px] text-slate-500 font-medium">Size: {item.size} | Qty: {item.qty || item.quantity}</span>
+                                    {item.itemStatus === 'returned' && (
+                                      <span className="text-[9px] font-black px-1 rounded bg-red-100 text-red-700">
+                                        {t.itemReturned}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             );
@@ -1008,12 +1459,41 @@ export default function OrdersView() {
                             </button>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-end gap-2">
-                            <span className="text-xs font-semibold text-slate-500 hidden lg:inline">{order.createdBy || 'Website'}</span>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <span className="text-xs font-semibold text-slate-500 hidden lg:inline mr-1">{order.createdBy || 'Website'}</span>
+
+                            {/* Create Exchange Button */}
+                            <button
+                              type="button"
+                              onClick={() => setExchangeOrder(order)}
+                              className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 transition-colors p-2 rounded-lg min-h-[40px] min-w-[40px] flex items-center justify-center"
+                              title={t.createExchange}
+                            >
+                              <ArrowLeftRight size={16} />
+                            </button>
+
+                            {/* Partial Delivery Button */}
+                            <button
+                              type="button"
+                              onClick={() => setPartialDeliveryOrder(order)}
+                              className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 transition-colors p-2 rounded-lg min-h-[40px] min-w-[40px] flex items-center justify-center"
+                              title={t.partialDelivery}
+                            >
+                              <Split size={16} />
+                            </button>
                             
+                            {/* Thermal Shipping Label */}
+                            <button
+                              onClick={() => setThermalLabelOrder(order)}
+                              className="text-slate-400 hover:text-slate-800 transition-colors p-2 rounded-lg hover:bg-slate-100 min-h-[40px] min-w-[40px] flex items-center justify-center"
+                              title={t.printShippingLabel}
+                            >
+                              <Printer size={16} />
+                            </button>
+
                             <button
                               onClick={() => setInvoiceOrder(order)}
-                              className="text-slate-400 hover:text-[#597867] transition-colors p-2 rounded-lg hover:bg-emerald-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                              className="text-slate-400 hover:text-[#597867] transition-colors p-2 rounded-lg hover:bg-emerald-50 min-h-[40px] min-w-[40px] flex items-center justify-center"
                               title={t.orderDetails}
                             >
                               <FileText size={16} />
@@ -1021,7 +1501,7 @@ export default function OrdersView() {
 
                             <button
                               onClick={() => toggleNotes(order.id)}
-                              className={`relative p-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center ${activeNotesOrderIds[order.id] ? 'bg-slate-100 text-slate-700' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
+                              className={`relative p-2 rounded-lg transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center ${activeNotesOrderIds[order.id] ? 'bg-slate-100 text-slate-700' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
                               title={t.internalNotes}
                             >
                               <MessageCircle size={16} />
@@ -1034,7 +1514,7 @@ export default function OrdersView() {
 
                             <button
                               onClick={() => { setOrderToEdit(order); setIsEditModalOpen(true); }}
-                              className="text-slate-400 hover:text-blue-500 transition-colors p-2 rounded-lg hover:bg-blue-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                              className="text-slate-400 hover:text-blue-500 transition-colors p-2 rounded-lg hover:bg-blue-50 min-h-[40px] min-w-[40px] flex items-center justify-center"
                               title={t.editOrder}
                             >
                               <Pencil size={16} />
@@ -1042,7 +1522,7 @@ export default function OrdersView() {
 
                             <button
                               onClick={() => setOrderToDelete(order)}
-                              className="text-slate-400 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                              className="text-slate-400 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50 min-h-[40px] min-w-[40px] flex items-center justify-center"
                               title={t.deleteOrder}
                             >
                               <Trash2 size={16} />
@@ -1086,6 +1566,7 @@ export default function OrdersView() {
       <ExportOrdersModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} />
       <EditOrderModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} orderToEdit={orderToEdit} />
       <OrderInvoiceModal isOpen={!!invoiceOrder} onClose={() => setInvoiceOrder(null)} order={invoiceOrder} />
+      <ThermalShippingLabelModal isOpen={!!thermalLabelOrder} onClose={() => setThermalLabelOrder(null)} order={thermalLabelOrder} />
       <ImageLightbox isOpen={!!lightboxImg} imageUrl={lightboxImg} onClose={() => setLightboxImg(null)} />
 
       {/* Customer Blacklist Modal */}
@@ -1103,6 +1584,25 @@ export default function OrdersView() {
         onClose={() => setWhatsAppOrder(null)}
         order={whatsAppOrder}
         language={language}
+      />
+
+      {/* Create Exchange Modal */}
+      <CreateExchangeModal
+        isOpen={!!exchangeOrder}
+        onClose={() => setExchangeOrder(null)}
+        parentOrder={exchangeOrder}
+        products={products}
+        language={language}
+        onCreateExchange={createExchangeOrder}
+      />
+
+      {/* Partial Delivery Modal */}
+      <PartialDeliveryModal
+        isOpen={!!partialDeliveryOrder}
+        onClose={() => setPartialDeliveryOrder(null)}
+        order={partialDeliveryOrder}
+        language={language}
+        onUpdatePartialDelivery={updatePartialDelivery}
       />
 
       {/* Restore Order Modal */}
