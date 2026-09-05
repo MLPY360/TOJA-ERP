@@ -137,16 +137,16 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="bg-white rounded-2xl shadow-xl w-[95%] md:max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
+          className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden my-auto"
         >
-          <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50 shrink-0">
-            <h2 className="text-xl font-extrabold text-[#181E1C]">{t.editOrder}</h2>
-            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center">
+          <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-100 bg-slate-50 shrink-0">
+            <h2 className="text-lg sm:text-xl font-extrabold text-[#181E1C]">{t.editOrder}</h2>
+            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center">
               <X size={20} />
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
             <form id="editOrderForm" onSubmit={handleSubmit} className="flex flex-col gap-6">
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -171,7 +171,7 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
               <div className="border-t border-slate-100 pt-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-extrabold text-[#181E1C]">{t.orderItemsTitle}</h3>
-                  <button type="button" onClick={addItem} className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-[#597867] bg-[#597867]/10 hover:bg-[#597867]/20 rounded-lg transition-colors min-h-[44px]">
+                  <button type="button" onClick={addItem} className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-[#597867] bg-[#597867]/10 hover:bg-[#597867]/20 rounded-lg transition-colors min-h-[40px]">
                     <Plus size={14} strokeWidth={2.5} /> {t.addItem}
                   </button>
                 </div>
@@ -200,7 +200,7 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
                           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-start">{t.qty}</label>
                           <input type="number" min="1" value={item.qty} onChange={e => updateItem(index, 'qty', e.target.value)} className="w-full h-11 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start" />
                         </div>
-                        <button type="button" onClick={() => removeItem(index)} disabled={items.length === 1} className="h-11 px-3 text-slate-400 hover:text-red-500 disabled:opacity-30 transition-colors flex items-center justify-center min-w-[44px]">
+                        <button type="button" onClick={() => removeItem(index)} disabled={items.length === 1} className="h-11 px-3 text-slate-400 hover:text-red-500 disabled:opacity-30 transition-colors flex items-center justify-center min-w-[40px]">
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -225,13 +225,13 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
                   )}
                 </div>
 
-                <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                  {/* Type Selector */}
-                  <div className="flex items-center bg-white p-1 rounded-lg border border-slate-200 shadow-sm shrink-0">
+                <div className="p-3 sm:p-4 bg-slate-50/80 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  {/* Type Selector - full width 2-column grid on mobile */}
+                  <div className="grid grid-cols-2 sm:flex items-center bg-white p-1 rounded-lg border border-slate-200 shadow-sm shrink-0 w-full sm:w-auto">
                     <button
                       type="button"
                       onClick={() => handleDiscountTypeChange('percentage')}
-                      className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold transition-all min-h-[40px] ${
+                      className={`flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-md text-xs font-bold transition-all min-h-[40px] sm:min-h-0 ${
                         discountType === 'percentage'
                           ? 'bg-[#597867] text-white shadow-sm'
                           : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -242,7 +242,7 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
                     <button
                       type="button"
                       onClick={() => handleDiscountTypeChange('fixed')}
-                      className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold transition-all min-h-[40px] ${
+                      className={`flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-md text-xs font-bold transition-all min-h-[40px] sm:min-h-0 ${
                         discountType === 'fixed'
                           ? 'bg-[#597867] text-white shadow-sm'
                           : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -253,7 +253,7 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
                   </div>
 
                   {/* Value Input */}
-                  <div className="flex-1 relative">
+                  <div className="w-full sm:flex-1 relative">
                     <input
                       type="number"
                       min="0"
@@ -262,7 +262,7 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
                       value={discountValue}
                       onChange={(e) => handleDiscountValueChange(e.target.value)}
                       placeholder={discountType === 'percentage' ? "0%" : "0 EGP"}
-                      className="w-full h-11 px-3 pe-10 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] focus:ring-2 focus:ring-[#597867]/10 text-start"
+                      className="w-full h-11 sm:h-10 px-3 pe-10 rounded-lg border border-slate-200 bg-white text-base sm:text-sm outline-none focus:border-[#597867] focus:ring-2 focus:ring-[#597867]/10 text-start"
                     />
                     <span className="absolute end-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">
                       {discountType === 'percentage' ? '%' : 'EGP'}
@@ -321,7 +321,7 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
             </form>
           </div>
 
-          <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 shrink-0">
+          <div className="p-4 sm:p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 shrink-0">
             <button onClick={onClose} type="button" className="px-5 py-2.5 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors min-h-[44px]">
               {t.cancel}
             </button>

@@ -217,7 +217,7 @@ export default function OrdersView() {
 
   return (
     <div className="bg-white rounded-2xl shadow-[0_2px_10px_rgba(0,0,0,0.03)] border border-slate-100 overflow-hidden mt-8">
-      <div className="flex flex-col gap-4 border-b border-slate-100 px-7 py-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 border-b border-slate-100 px-4 sm:px-7 py-4 sm:py-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-[13px] font-bold uppercase tracking-[0.08em] text-[#181E1C]">
             {t.orderManagement}
@@ -227,7 +227,7 @@ export default function OrdersView() {
           </p>
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="relative w-full sm:w-64">
+          <div className="relative flex-1 sm:w-64">
             <Search size={15} strokeWidth={2} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -239,15 +239,231 @@ export default function OrdersView() {
           </div>
           <button
             onClick={() => setIsExportModalOpen(true)}
-            className="flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 whitespace-nowrap"
+            className="flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 whitespace-nowrap min-h-[44px]"
           >
             <Download size={16} strokeWidth={2.5} /> <span className="hidden sm:inline">{t.exportData || 'Export Data'}</span>
           </button>
         </div>
       </div>
 
-      {/* Desktop Table */}
-      <div className="w-full overflow-x-auto">
+      {/* Mobile Orders View (Portrait / Small Screens < md) */}
+      <div className="block md:hidden divide-y divide-slate-100">
+        {filtered.length === 0 ? (
+          <div className="p-8 text-center flex flex-col items-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+              <PackageX size={24} className="text-slate-400" />
+            </div>
+            <p className="text-[13px] font-semibold text-slate-500">{t.noOrders}</p>
+          </div>
+        ) : (
+          filtered.map((order, index) => {
+            const cName = order.customerName || (order.customerDetails ? `${order.customerDetails.firstName} ${order.customerDetails.lastName}` : 'Unknown');
+            const cPhone = order.phone || order.customerDetails?.phone || '';
+            const cCity = order.governorate || order.customerDetails?.city || '';
+            const cAddress = order.address || order.customerDetails?.address || '';
+            const cTotal = order.totalAmount || order.total || order.totals?.total || order.totals?.grandTotal || 0;
+            const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
+            const cShipping = order.shippingFee ?? order.totals?.shipping ?? 0;
+            const formattedPhone = formatWhatsAppNumber(cPhone);
+
+            return (
+              <motion.div
+                key={order.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.03 }}
+                className="p-4 flex flex-col gap-3 bg-white"
+              >
+                {/* Card Header: Order ID, Date & Status Dropdown */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-start">
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceOrder(order)}
+                      className="font-black text-sm text-[#181E1C] hover:text-[#597867] hover:underline transition-colors text-start block"
+                      title={t.orderDetails}
+                    >
+                      {displayId}
+                    </button>
+                    <p className="text-[10px] text-slate-400 font-medium mt-0.5">{formatDate(order.createdAt)}</p>
+                  </div>
+
+                  {/* Status Dropdown */}
+                  <select
+                    value={order.status}
+                    onChange={(e) => handleStatusChange(order, e.target.value)}
+                    className={`text-[11px] font-extrabold px-3 py-1.5 rounded-full border outline-none cursor-pointer appearance-none text-center shadow-sm ${getStatusBadge(order.status)}`}
+                    style={{ textAlignLast: 'center' }}
+                  >
+                    <option value="Pending" className="text-slate-700 bg-white">{t.pending}</option>
+                    <option value="Shipped" className="text-slate-700 bg-white">{t.shipped}</option>
+                    {order.status === 'Delivered' && (
+                      <option value="Delivered" className="text-slate-700 bg-white">{t.delivered}</option>
+                    )}
+                    <option value="Delivered - Pending Cash" className="text-slate-700 bg-white">{t.deliveredPendingCash}</option>
+                    <option value="Delivered - Collected" className="text-slate-700 bg-white">{t.deliveredCollected}</option>
+                    <option value="Returned" className="text-slate-700 bg-white">{t.returned}</option>
+                    <option value="Cancelled" className="text-slate-700 bg-white">{t.cancelled}</option>
+                  </select>
+                </div>
+
+                {/* Customer Details & Location */}
+                <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-100 flex flex-col gap-1.5 text-xs text-start">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-extrabold text-[#181E1C] text-sm">{cName}</span>
+                    {cPhone && (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[11px] font-bold text-slate-600">{cPhone}</span>
+                        <button
+                          onClick={() => window.open(`https://wa.me/${formattedPhone}`, '_blank')}
+                          className="text-emerald-500 hover:text-emerald-600 p-1 rounded-md hover:bg-emerald-50 transition-colors"
+                          title="Chat on WhatsApp"
+                        >
+                          <MessageCircle size={15} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {(cCity || cAddress) && (
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {cCity}{cCity && cAddress ? ' - ' : ''}{cAddress}
+                    </p>
+                  )}
+                </div>
+
+                {/* Ordered Products (Items) List on Mobile */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider text-start">
+                    {t.items} ({order.items?.length || 0})
+                  </span>
+                  <div className="flex flex-col gap-1.5">
+                    {order.items?.map((item, i) => {
+                      const product = products.find(p => p.id === item.productId) || item;
+                      const img = product?.imageUrl || product?.image;
+                      return (
+                        <div key={i} className="flex items-center gap-2.5 p-2 bg-slate-50/60 rounded-lg border border-slate-100">
+                          {img ? (
+                            <img
+                              src={img}
+                              alt={product?.name}
+                              className="w-10 h-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => setLightboxImg(img)}
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                              <PackageX size={16} className="text-slate-400" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0 text-start">
+                            <p className="text-xs font-bold text-slate-800 truncate">{product?.name || 'Product'}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-600">
+                                {item.size}
+                              </span>
+                              <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-[#597867]/10 text-[#597867]">
+                                x{item.qty || item.quantity || 1}
+                              </span>
+                              {product?.sellingPrice && (
+                                <span className="text-[10px] font-semibold text-slate-400">
+                                  {product.sellingPrice} EGP
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Pricing & Financial Breakdown */}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-start">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider">{t.totalValue}</span>
+                    <span className="text-base font-black text-[#597867]">{cTotal.toLocaleString('en-EG')} EGP</span>
+                  </div>
+
+                  <div className="flex flex-col items-end gap-0.5 text-end">
+                    <span className="text-[10px] text-slate-400 font-medium">Shipping: {cShipping} EGP</span>
+                    {order.discount?.amount > 0 && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                        <Tag size={9} /> -{Number(order.discount.amount).toLocaleString('en-EG')} EGP ({order.discount.type === 'percentage' ? `${order.discount.value}%` : 'Fixed'})
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Mobile Actions Toolbar */}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-semibold text-slate-400">
+                    {order.createdBy ? `By: ${order.createdBy}` : 'Website'}
+                  </span>
+
+                  <div className="flex items-center gap-1">
+                    {/* View Invoice */}
+                    <button
+                      onClick={() => setInvoiceOrder(order)}
+                      className="p-2 text-slate-500 hover:text-[#597867] rounded-lg hover:bg-slate-100 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center"
+                      title={t.orderDetails}
+                    >
+                      <FileText size={16} />
+                    </button>
+
+                    {/* Internal Notes */}
+                    <button
+                      onClick={() => toggleNotes(order.id)}
+                      className={`relative p-2 rounded-lg transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center ${activeNotesOrderIds[order.id] ? 'bg-slate-100 text-slate-700' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+                      title={t.internalNotes}
+                    >
+                      <MessageCircle size={16} />
+                      {order.notes && order.notes.length > 0 && (
+                        <span className="absolute top-1.5 right-1.5 bg-[#597867] text-white text-[9px] font-black rounded-full h-3.5 w-3.5 flex items-center justify-center">
+                          {order.notes.length}
+                        </span>
+                      )}
+                    </button>
+
+                    {/* Edit Order */}
+                    <button
+                      onClick={() => { setOrderToEdit(order); setIsEditModalOpen(true); }}
+                      className="text-slate-500 hover:text-blue-500 transition-colors p-2 rounded-lg hover:bg-blue-50 min-h-[40px] min-w-[40px] flex items-center justify-center"
+                      title={t.editOrder}
+                    >
+                      <Pencil size={16} />
+                    </button>
+
+                    {/* Delete Order */}
+                    <button
+                      onClick={() => setOrderToDelete(order)}
+                      className="text-slate-500 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50 min-h-[40px] min-w-[40px] flex items-center justify-center"
+                      title={t.deleteOrder}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expanded Notes Block */}
+                {activeNotesOrderIds[order.id] && (
+                  <div className="pt-2">
+                    <OrderNotesBlock order={order} />
+                  </div>
+                )}
+
+                {/* Return Reason Block */}
+                {order.status === 'Returned' && (
+                  <div className="pt-2">
+                    <ReturnReasonBlock order={order} />
+                  </div>
+                )}
+              </motion.div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Desktop Table (Visible on md and larger screens) */}
+      <div className="w-full overflow-x-auto hidden md:block">
         <table className="w-full min-w-[1000px] text-start border-collapse whitespace-nowrap">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-500 font-bold">

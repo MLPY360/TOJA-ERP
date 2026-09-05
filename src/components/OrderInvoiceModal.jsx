@@ -48,7 +48,7 @@ export default function OrderInvoiceModal({ isOpen, onClose, order }) {
           className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-100 print:shadow-none print:border-none print:max-h-none print:w-full print:rounded-none"
         >
           {/* Header - Not printed */}
-          <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50 shrink-0 print:hidden">
+          <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50 shrink-0 print:hidden">
             <div className="flex items-center gap-2">
               <span className="font-extrabold text-lg text-[#181E1C]">TOJA</span>
               <span className="text-slate-300">|</span>
@@ -57,7 +57,7 @@ export default function OrderInvoiceModal({ isOpen, onClose, order }) {
             <div className="flex items-center gap-2">
               <button
                 onClick={handlePrint}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 shadow-sm transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 shadow-sm transition-colors min-h-[38px]"
                 title={t.printInvoice}
               >
                 <Printer size={15} />
@@ -65,7 +65,7 @@ export default function OrderInvoiceModal({ isOpen, onClose, order }) {
               </button>
               <button
                 onClick={onClose}
-                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center"
               >
                 <X size={18} />
               </button>
@@ -73,7 +73,7 @@ export default function OrderInvoiceModal({ isOpen, onClose, order }) {
           </div>
 
           {/* Printable Invoice Body */}
-          <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 print:p-8 print:overflow-visible">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-6 print:p-8 print:overflow-visible">
             {/* Invoice Top Brand & Meta */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-5 border-b border-slate-100">
               <div>
