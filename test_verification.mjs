@@ -601,6 +601,166 @@ test('Remaining Unsold Inventory Value (Cost vs Retail) and Projected Final Batc
 });
 
 // =============================================================
+// 5. UNIVERSAL STOCK RESOLVER & SCHEMA COMPATIBILITY
+// =============================================================
+console.log('\n--- 5. UNIVERSAL STOCK RESOLVER & SCHEMA COMPATIBILITY ---');
+
+const getAvailableStock = (product, size) => {
+  if (!product || !size) return 0;
+  const sizeStr = String(size);
+  const sizeUpper = sizeStr.toUpperCase();
+
+  const initial = product.initialStock?.[sizeStr] 
+               ?? product.initialStock?.[sizeUpper]
+               ?? product.initial?.[sizeStr]
+               ?? product.initial?.[sizeUpper]
+               ?? product[`initialStock${sizeStr}`] 
+               ?? product[`initialStock${sizeUpper}`] 
+               ?? product[`stock${sizeStr}`] 
+               ?? product[`stock${sizeUpper}`] 
+               ?? 0;
+  
+  const sold = product.sold?.[sizeStr] 
+            ?? product.sold?.[sizeUpper]
+            ?? product[`sold${sizeStr}`] 
+            ?? product[`sold${sizeUpper}`] 
+            ?? 0;
+
+  return Math.max(0, Number(initial) - Number(sold));
+};
+
+const getProductSizes = (product) => {
+  if (!product) return ['M', 'L', 'XL', 'XXL'];
+  const sizes = new Set();
+  
+  if (product.initialStock && typeof product.initialStock === 'object') {
+    Object.keys(product.initialStock).forEach(s => sizes.add(s));
+  }
+  if (product.initial && typeof product.initial === 'object') {
+    Object.keys(product.initial).forEach(s => sizes.add(s));
+  }
+  if (product.sold && typeof product.sold === 'object') {
+    Object.keys(product.sold).forEach(s => sizes.add(s));
+  }
+
+  const candidateSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '4XL', 'Oversize', 'Free Size'];
+  candidateSizes.forEach(s => {
+    if (
+      product[`initialStock${s}`] !== undefined || 
+      product[`initialStock${s.toLowerCase()}`] !== undefined || 
+      product[`stock${s}`] !== undefined || 
+      product[`stock${s.toLowerCase()}`] !== undefined || 
+      product[`sold${s}`] !== undefined ||
+      product[`sold${s.toLowerCase()}`] !== undefined
+    ) {
+      sizes.add(s);
+    }
+  });
+
+  if (sizes.size === 0) {
+    return ['M', 'L', 'XL', 'XXL'];
+  }
+
+  const standardOrder = ['XS', 'S', 'M', 'L', 'XL', '2XL', 'XXL', '3XL', '4XL', 'Oversize', 'Free Size'];
+  const arr = Array.from(sizes);
+  arr.sort((a, b) => {
+    const idxA = standardOrder.indexOf(a);
+    const idxB = standardOrder.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.localeCompare(b);
+  });
+  return arr;
+};
+
+test('getAvailableStock: Resolves standard nested initialStock & sold schema', () => {
+  const prod = {
+    initialStock: { M: 20, L: 15, XL: 10, XXL: 5 },
+    sold: { M: 5, L: 15, XL: 8, XXL: 0 }
+  };
+  assert.strictEqual(getAvailableStock(prod, 'M'), 15);
+  assert.strictEqual(getAvailableStock(prod, 'L'), 0);
+  assert.strictEqual(getAvailableStock(prod, 'XL'), 2);
+  assert.strictEqual(getAvailableStock(prod, 'XXL'), 5);
+});
+
+test('getAvailableStock: Case-insensitivity support (lowercase & uppercase size query)', () => {
+  const prod = {
+    initialStock: { M: 20, XXL: 10 },
+    sold: { M: 3, XXL: 4 }
+  };
+  assert.strictEqual(getAvailableStock(prod, 'm'), 17);
+  assert.strictEqual(getAvailableStock(prod, 'xxl'), 6);
+  assert.strictEqual(getAvailableStock(prod, 'XXL'), 6);
+});
+
+test('getAvailableStock: Resolves legacy flat schema keys (initialStockM, stockM, soldM)', () => {
+  const legacyProd1 = {
+    initialStockM: 25,
+    initialStockL: 10,
+    soldM: 5,
+    soldL: 10
+  };
+  assert.strictEqual(getAvailableStock(legacyProd1, 'M'), 20);
+  assert.strictEqual(getAvailableStock(legacyProd1, 'L'), 0);
+
+  const legacyProd2 = {
+    stockXL: 30,
+    soldXL: 12
+  };
+  assert.strictEqual(getAvailableStock(legacyProd2, 'XL'), 18);
+});
+
+test('getAvailableStock: Negative stock sanitization (Math.max(0, initial - sold))', () => {
+  const overSoldProd = {
+    initialStock: { M: 5, L: 0 },
+    sold: { M: 10, L: 3 } // sold exceeds initial
+  };
+  // Must return 0, never -5 or -3
+  assert.strictEqual(getAvailableStock(overSoldProd, 'M'), 0);
+  assert.strictEqual(getAvailableStock(overSoldProd, 'L'), 0);
+});
+
+test('getAvailableStock: Returns 0 for null/undefined product or non-existent size', () => {
+  assert.strictEqual(getAvailableStock(null, 'M'), 0);
+  assert.strictEqual(getAvailableStock(undefined, 'M'), 0);
+  assert.strictEqual(getAvailableStock({ initialStock: { M: 10 } }, null), 0);
+  assert.strictEqual(getAvailableStock({ initialStock: { M: 10 } }, '3XL'), 0);
+});
+
+test('getProductSizes: Dynamically extracts sizes and orders them correctly', () => {
+  const prod = {
+    initialStock: { XXL: 10, S: 5, M: 20, XL: 15 }
+  };
+  const sizes = getProductSizes(prod);
+  assert.deepStrictEqual(sizes, ['S', 'M', 'XL', 'XXL']);
+});
+
+test('getProductSizes: Extracts sizes from legacy flat keys', () => {
+  const legacyProd = {
+    initialStockL: 10,
+    stockXXL: 5,
+    soldM: 2
+  };
+  const sizes = getProductSizes(legacyProd);
+  assert.deepStrictEqual(sizes, ['M', 'L', 'XXL']);
+});
+
+test('Auto-select first available size: selects first size with stock > 0, skips OOS', () => {
+  const prod = {
+    name: 'Vintage Hoodie',
+    initialStock: { M: 5, L: 10, XL: 0, XXL: 8 },
+    sold: { M: 5, L: 10, XL: 0, XXL: 2 } // M and L are sold out, XXL has 6 left
+  };
+  const sizes = getProductSizes(prod);
+  const firstAvailable = sizes.find(s => getAvailableStock(prod, s) > 0);
+
+  // M: 0, L: 0, XL: 0, XXL: 6 -> should pick 'XXL'
+  assert.strictEqual(firstAvailable, 'XXL');
+});
+
+// =============================================================
 // SUMMARY REPORT
 // =============================================================
 console.log('\n================================================================');

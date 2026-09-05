@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Download, ClipboardList, LogOut, Package, BarChart3, LayoutDashboard, Menu, Globe, Wallet, ShieldAlert, Users } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { useStore, calculateBatchCapitalMetrics } from './store/useStore';
+import { useStore, calculateBatchCapitalMetrics, getAvailableStock, getProductSizes } from './store/useStore';
 import { translations } from './translations';
 import LoginModal from './components/LoginModal';
 import ActivityLogs from './components/ActivityLogs';
@@ -58,10 +58,17 @@ export default function App() {
     let sumProfitMargin = 0;
 
     products.forEach(p => {
-      const pInitial = getSum(p.initialStock);
-      const pSold = getSum(p.sold);
+      const pSizes = getProductSizes(p);
+      let pAvailable = 0;
+      let pSold = 0;
 
-      totalInStock += (pInitial - pSold);
+      pSizes.forEach(sz => {
+        pAvailable += getAvailableStock(p, sz);
+        const s = Number(p.sold?.[sz] ?? p.sold?.[sz.toUpperCase()] ?? p[`sold${sz}`] ?? 0);
+        pSold += Math.max(0, s);
+      });
+
+      totalInStock += pAvailable;
       totalSoldUnits += pSold;
       sumProfitMargin += (Number(p.sellingPrice) || 0) - (Number(p.costPrice) || 0);
     });
@@ -132,12 +139,16 @@ export default function App() {
   const handleExport = () => {
     const isOps = userRole === 'operations';
     const data = products.map(p => {
-      const stockM = (p.initialStock?.M || 0) - (p.sold?.M || 0);
-      const stockL = (p.initialStock?.L || 0) - (p.sold?.L || 0);
-      const stockXL = (p.initialStock?.XL || 0) - (p.sold?.XL || 0);
-      const stockXXL = (p.initialStock?.XXL || 0) - (p.sold?.XXL || 0);
+      const stockM = getAvailableStock(p, 'M');
+      const stockL = getAvailableStock(p, 'L');
+      const stockXL = getAvailableStock(p, 'XL');
+      const stockXXL = getAvailableStock(p, 'XXL');
 
-      const totalSold = (p.sold?.M || 0) + (p.sold?.L || 0) + (p.sold?.XL || 0) + (p.sold?.XXL || 0);
+      const pSizes = getProductSizes(p);
+      const totalSold = pSizes.reduce((sum, sz) => {
+        const s = Number(p.sold?.[sz] ?? p.sold?.[sz.toUpperCase()] ?? p[`sold${sz}`] ?? 0);
+        return sum + Math.max(0, s);
+      }, 0);
       const rev = totalSold * (Number(p.sellingPrice) || 0);
       const prof = totalSold * ((Number(p.sellingPrice) || 0) - (Number(p.costPrice) || 0));
 

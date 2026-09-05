@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Minus, Search, PackageX, Trash2, Pencil, AlertTriangle, History, SlidersHorizontal, X, Check } from 'lucide-react';
-import { useStore } from '../store/useStore';
+import { useStore, getAvailableStock, getProductSizes } from '../store/useStore';
 import { translations } from '../translations';
 import ImageLightbox from './ImageLightbox';
 
@@ -200,9 +200,7 @@ function AdjustStockModal({ isOpen, onClose, products, preselectedProduct, prese
   if (!isOpen) return null;
 
   const product = products.find(p => p.id === selectedProductId);
-  const currentInitial = product?.initialStock?.[selectedSize] || 0;
-  const currentSold = product?.sold?.[selectedSize] || 0;
-  const currentAvailable = currentInitial - currentSold;
+  const currentAvailable = getAvailableStock(product, selectedSize);
 
   const costPrice = Number(product?.costPrice) || 0;
   const calculatedDelta = direction === 'deduct' ? -Math.abs(Number(qty) || 1) : Math.abs(Number(qty) || 1);
@@ -264,7 +262,7 @@ function AdjustStockModal({ isOpen, onClose, products, preselectedProduct, prese
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">{t.size || 'Size'}</label>
               <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                {(product && Object.keys(product.initialStock || {}).length > 0 ? Object.keys(product.initialStock) : ['M', 'L', 'XL', 'XXL']).map(s => (
+                {getProductSizes(product).map(s => (
                   <button
                     key={s}
                     type="button"
@@ -412,12 +410,13 @@ export default function InventoryTable({ onEdit }) {
   });
 
   const lowStockCount = products.filter(p => {
-    const pSizes = Object.keys(p.initialStock || {});
-    const checkSizes = pSizes.length > 0 ? pSizes : ['M', 'L', 'XL', 'XXL'];
-    return checkSizes.some(size => {
-      const init = p.initialStock?.[size] || 0;
-      const sold = p.sold?.[size] || 0;
-      return init > 0 && (init - sold) <= 2;
+    const pSizes = getProductSizes(p);
+    return pSizes.some(size => {
+      const init = Number(
+        p.initialStock?.[size] ?? p.initialStock?.[size.toUpperCase()] ?? p.initial?.[size] ?? p[`initialStock${size}`] ?? p[`stock${size}`] ?? 0
+      );
+      const avail = getAvailableStock(p, size);
+      return init > 0 && avail <= 2;
     });
   }).length;
 
@@ -528,12 +527,14 @@ export default function InventoryTable({ onEdit }) {
               </tr>
             ) : (
               filtered.map((product, index) => {
-                const totalInitial = getSum(product.initialStock);
-                const totalSold = getSum(product.sold);
-                const currentStock = totalInitial - totalSold;
+                const sizes = getProductSizes(product);
+                const currentStock = sizes.reduce((sum, sz) => sum + getAvailableStock(product, sz), 0);
+                const totalSold = sizes.reduce((sum, sz) => {
+                  const s = product.sold?.[sz] ?? product.sold?.[sz.toUpperCase()] ?? product[`sold${sz}`] ?? 0;
+                  return sum + Math.max(0, Number(s) || 0);
+                }, 0);
                 const profitPerItem = (product.sellingPrice || 0) - (product.costPrice || 0);
                 const totalProfit = totalSold * profitPerItem;
-                const sizes = Object.keys(product.initialStock || {}).length > 0 ? Object.keys(product.initialStock) : ['M', 'L', 'XL', 'XXL'];
 
                 return (
                   <motion.tr
@@ -567,9 +568,11 @@ export default function InventoryTable({ onEdit }) {
                     <td className="p-4 align-middle text-start">
                       <div className="flex flex-wrap gap-1.5 max-w-[170px]">
                         {sizes.map((size) => {
-                          const sizeInitial = product.initialStock?.[size] || 0;
-                          if (sizeInitial === 0) return null;
-                          const sizeStock = sizeInitial - (product.sold?.[size] || 0);
+                          const sizeInitial = Number(
+                            product.initialStock?.[size] ?? product.initialStock?.[size.toUpperCase()] ?? product.initial?.[size] ?? product[`initialStock${size}`] ?? product[`stock${size}`] ?? 0
+                          );
+                          const sizeStock = getAvailableStock(product, size);
+                          if (sizeInitial === 0 && sizeStock === 0) return null;
 
                           let badgeClass = "bg-[#F8FAFC] text-slate-600 border-slate-200";
                           let labelExtra = "";
@@ -695,12 +698,14 @@ export default function InventoryTable({ onEdit }) {
           </div>
         ) : (
           filtered.map((product) => {
-            const totalInitial = getSum(product.initialStock);
-            const totalSold = getSum(product.sold);
-            const currentStock = totalInitial - totalSold;
+            const sizes = getProductSizes(product);
+            const currentStock = sizes.reduce((sum, sz) => sum + getAvailableStock(product, sz), 0);
+            const totalSold = sizes.reduce((sum, sz) => {
+              const s = product.sold?.[sz] ?? product.sold?.[sz.toUpperCase()] ?? product[`sold${sz}`] ?? 0;
+              return sum + Math.max(0, Number(s) || 0);
+            }, 0);
             const profitPerItem = (product.sellingPrice || 0) - (product.costPrice || 0);
             const totalProfit = totalSold * profitPerItem;
-            const sizes = Object.keys(product.initialStock || {}).length > 0 ? Object.keys(product.initialStock) : ['M', 'L', 'XL', 'XXL'];
 
             return (
               <div key={product.id} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex flex-col">
@@ -750,10 +755,11 @@ export default function InventoryTable({ onEdit }) {
                   <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Stock per Size</p>
                   <div className="grid grid-cols-4 gap-2">
                     {sizes.map(size => {
-                      const sizeInitial = product.initialStock?.[size] || 0;
-                      const sizeSold = product.sold?.[size] || 0;
-                      const sizeStock = sizeInitial - sizeSold;
-                      if (sizeInitial === 0) return null;
+                      const sizeInitial = Number(
+                        product.initialStock?.[size] ?? product.initialStock?.[size.toUpperCase()] ?? product.initial?.[size] ?? product[`initialStock${size}`] ?? product[`stock${size}`] ?? 0
+                      );
+                      const sizeStock = getAvailableStock(product, size);
+                      if (sizeInitial === 0 && sizeStock === 0) return null;
 
                       let mobileBadge = "bg-slate-50 border-slate-100 text-[#181E1C]";
                       if (sizeStock <= 0) {

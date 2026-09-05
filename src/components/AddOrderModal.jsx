@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Trash2, Tag, Percent, ShieldAlert, AlertTriangle } from 'lucide-react';
-import { useStore, normalizePhone } from '../store/useStore';
+import { useStore, normalizePhone, getAvailableStock, getProductSizes } from '../store/useStore';
 import { translations } from '../translations';
 
 export default function AddOrderModal({ isOpen, onClose }) {
@@ -22,13 +22,6 @@ export default function AddOrderModal({ isOpen, onClose }) {
     if (!clean || !blacklist) return null;
     return blacklist.find(b => b.phone === clean);
   }, [phone, blacklist]);
-
-  const getStockForSize = (product, size) => {
-    if (!product) return 0;
-    const initial = (product.initial && product.initial[size]) || 0;
-    const sold = (product.sold && product.sold[size]) || 0;
-    return Math.max(0, initial - sold);
-  };
 
   // Discount state: type ('percentage' | 'fixed') and value
   const [discountType, setDiscountType] = useState('percentage');
@@ -100,7 +93,7 @@ export default function AddOrderModal({ isOpen, onClose }) {
     for (const item of validItems) {
       const product = products.find(p => p.id === item.productId);
       if (product) {
-        const stock = getStockForSize(product, item.size);
+        const stock = getAvailableStock(product, item.size);
         if (stock <= 0) {
           alert(`${product.name} (${item.size}): ${t.outOfStock}`);
           return;
@@ -159,14 +152,10 @@ export default function AddOrderModal({ isOpen, onClose }) {
       newItems[index].productId = value;
       const product = products.find(p => p.id === value);
       if (product) {
-        const currentStock = getStockForSize(product, newItems[index].size);
-        if (currentStock <= 0) {
-          const availableSizes = Object.keys(product.initialStock || {});
-          const firstAvailable = (availableSizes.length > 0 ? availableSizes : ['M', 'L', 'XL', 'XXL']).find(s => getStockForSize(product, s) > 0);
-          if (firstAvailable) {
-            newItems[index].size = firstAvailable;
-          }
-        }
+        const productSizes = getProductSizes(product);
+        // Automatically set selectedSize to the first size with available stock > 0
+        const firstAvailable = productSizes.find(s => getAvailableStock(product, s) > 0);
+        newItems[index].size = firstAvailable || productSizes[0] || 'M';
       }
     } else {
       newItems[index][field] = value;
@@ -248,7 +237,8 @@ export default function AddOrderModal({ isOpen, onClose }) {
                 <div className="flex flex-col gap-3">
                   {items.map((item, index) => {
                     const selectedProduct = products.find(p => p.id === item.productId);
-                    const selectedStock = selectedProduct ? getStockForSize(selectedProduct, item.size) : null;
+                    const selectedStock = selectedProduct ? getAvailableStock(selectedProduct, item.size) : null;
+                    const availableSizes = getProductSizes(selectedProduct);
 
                     return (
                       <div key={index} className="flex flex-col sm:flex-row gap-3 sm:items-end p-4 sm:p-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -270,8 +260,8 @@ export default function AddOrderModal({ isOpen, onClose }) {
                               )}
                             </div>
                             <select value={item.size} onChange={e => updateItem(index, 'size', e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start">
-                              {(selectedProduct && Object.keys(selectedProduct.initialStock || {}).length > 0 ? Object.keys(selectedProduct.initialStock) : ['M', 'L', 'XL', 'XXL']).map(sz => {
-                                const szStock = selectedProduct ? getStockForSize(selectedProduct, sz) : null;
+                              {availableSizes.map(sz => {
+                                const szStock = selectedProduct ? getAvailableStock(selectedProduct, sz) : null;
                                 const isOOS = szStock !== null && szStock <= 0;
                                 return (
                                   <option key={sz} value={sz} disabled={isOOS}>

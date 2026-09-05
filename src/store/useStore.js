@@ -14,6 +14,84 @@ export const normalizePhone = (phone) => {
   return cleaned;
 };
 
+export const getAvailableStock = (product, size) => {
+  if (!product || !size) return 0;
+  const sizeStr = String(size);
+  const sizeUpper = sizeStr.toUpperCase();
+
+  // 1. Resolve Initial Stock (support dynamic object, legacy flat keys, and case-insensitivity)
+  const initial = product.initialStock?.[sizeStr] 
+               ?? product.initialStock?.[sizeUpper]
+               ?? product.initial?.[sizeStr]
+               ?? product.initial?.[sizeUpper]
+               ?? product[`initialStock${sizeStr}`] 
+               ?? product[`initialStock${sizeUpper}`] 
+               ?? product[`stock${sizeStr}`] 
+               ?? product[`stock${sizeUpper}`] 
+               ?? 0;
+  
+  // 2. Resolve Sold Count
+  const sold = product.sold?.[sizeStr] 
+            ?? product.sold?.[sizeUpper]
+            ?? product[`sold${sizeStr}`] 
+            ?? product[`sold${sizeUpper}`] 
+            ?? 0;
+
+  return Math.max(0, Number(initial) - Number(sold));
+};
+
+export const getProductSizes = (product) => {
+  if (!product) return ['M', 'L', 'XL', 'XXL'];
+  const sizes = new Set();
+  
+  // 1. From dynamic initialStock object
+  if (product.initialStock && typeof product.initialStock === 'object') {
+    Object.keys(product.initialStock).forEach(s => sizes.add(s));
+  }
+  
+  // 2. From dynamic initial object (fallback)
+  if (product.initial && typeof product.initial === 'object') {
+    Object.keys(product.initial).forEach(s => sizes.add(s));
+  }
+
+  // 3. From dynamic sold object
+  if (product.sold && typeof product.sold === 'object') {
+    Object.keys(product.sold).forEach(s => sizes.add(s));
+  }
+  
+  // 4. From legacy flat keys (initialStockM, stockM, soldM, etc.)
+  const candidateSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '4XL', 'Oversize', 'Free Size'];
+  candidateSizes.forEach(s => {
+    if (
+      product[`initialStock${s}`] !== undefined || 
+      product[`initialStock${s.toLowerCase()}`] !== undefined || 
+      product[`stock${s}`] !== undefined || 
+      product[`stock${s.toLowerCase()}`] !== undefined || 
+      product[`sold${s}`] !== undefined ||
+      product[`sold${s.toLowerCase()}`] !== undefined
+    ) {
+      sizes.add(s);
+    }
+  });
+
+  if (sizes.size === 0) {
+    return ['M', 'L', 'XL', 'XXL'];
+  }
+
+  const standardOrder = ['XS', 'S', 'M', 'L', 'XL', '2XL', 'XXL', '3XL', '4XL', 'Oversize', 'Free Size'];
+  const arr = Array.from(sizes);
+  arr.sort((a, b) => {
+    const idxA = standardOrder.indexOf(a);
+    const idxB = standardOrder.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  return arr;
+};
+
 export const calculateBatchCapitalMetrics = (products = [], orders = [], expenses = []) => {
   let totalProductionCost = 0;
   let totalBatchUnits = 0;
@@ -26,16 +104,22 @@ export const calculateBatchCapitalMetrics = (products = [], orders = [], expense
     const costPrice = Number(p.costPrice) || 0;
     const sellingPrice = Number(p.sellingPrice) || 0;
 
-    // Initial units across all sizes
-    const initialStockObj = p.initialStock || {};
-    const productInitialUnits = Object.values(initialStockObj).reduce((sum, v) => sum + (Number(v) || 0), 0);
+    const sizes = getProductSizes(p);
+    let productInitialUnits = 0;
+    let productRemainingUnits = 0;
 
-    // Sold units across all sizes
-    const soldObj = p.sold || {};
-    const productSoldUnits = Object.values(soldObj).reduce((sum, v) => sum + (Number(v) || 0), 0);
-
-    // Remaining units
-    const productRemainingUnits = Math.max(0, productInitialUnits - productSoldUnits);
+    sizes.forEach(sz => {
+      const init = Number(
+        p.initialStock?.[sz] 
+        ?? p.initialStock?.[sz.toUpperCase()]
+        ?? p.initial?.[sz] 
+        ?? p[`initialStock${sz}`] 
+        ?? p[`stock${sz}`] 
+        ?? 0
+      );
+      productInitialUnits += Math.max(0, init);
+      productRemainingUnits += getAvailableStock(p, sz);
+    });
 
     totalBatchUnits += productInitialUnits;
     totalProductionCost += productInitialUnits * costPrice;

@@ -21,7 +21,7 @@ import {
   RefreshCw,
   Printer
 } from 'lucide-react';
-import { useStore, normalizePhone } from '../store/useStore';
+import { useStore, normalizePhone, getAvailableStock, getProductSizes } from '../store/useStore';
 import { translations } from '../translations';
 import ExportOrdersModal from './ExportOrdersModal';
 import EditOrderModal from './EditOrderModal';
@@ -414,7 +414,15 @@ function CreateExchangeModal({ isOpen, onClose, parentOrder, products, language,
   const [incomingQty, setIncomingQty] = useState(1);
 
   const [outgoingProductId, setOutgoingProductId] = useState(products[0]?.id || '');
-  const [outgoingSize, setOutgoingSize] = useState('M');
+  const [outgoingSize, setOutgoingSize] = useState(() => {
+    const p = products[0];
+    if (p) {
+      const sizes = getProductSizes(p);
+      const firstAvail = sizes.find(s => getAvailableStock(p, s) > 0);
+      return firstAvail || sizes[0] || 'M';
+    }
+    return 'M';
+  });
   const [outgoingQty, setOutgoingQty] = useState(1);
   const [exchangeShippingFee, setExchangeShippingFee] = useState('35');
   const [exchangeReason, setExchangeReason] = useState('');
@@ -423,14 +431,7 @@ function CreateExchangeModal({ isOpen, onClose, parentOrder, products, language,
   const selectedIncoming = parentItems[incomingIndex] || parentItems[0] || {};
   const outgoingProduct = products.find(p => p.id === outgoingProductId) || products[0];
 
-  const getStockForSize = (product, size) => {
-    if (!product) return 0;
-    const initial = (product.initialStock && product.initialStock[size]) || 0;
-    const sold = (product.sold && product.sold[size]) || 0;
-    return Math.max(0, initial - sold);
-  };
-
-  const availableStock = outgoingProduct ? getStockForSize(outgoingProduct, outgoingSize) : 0;
+  const availableStock = outgoingProduct ? getAvailableStock(outgoingProduct, outgoingSize) : 0;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -545,7 +546,16 @@ function CreateExchangeModal({ isOpen, onClose, parentOrder, products, language,
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{t.product}</label>
                 <select
                   value={outgoingProductId}
-                  onChange={(e) => setOutgoingProductId(e.target.value)}
+                  onChange={(e) => {
+                    const newId = e.target.value;
+                    setOutgoingProductId(newId);
+                    const prod = products.find(p => p.id === newId);
+                    if (prod) {
+                      const sizes = getProductSizes(prod);
+                      const firstAvail = sizes.find(s => getAvailableStock(prod, s) > 0);
+                      setOutgoingSize(firstAvail || sizes[0] || 'M');
+                    }
+                  }}
                   className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:border-emerald-500"
                 >
                   {products.map(p => (
@@ -565,8 +575,8 @@ function CreateExchangeModal({ isOpen, onClose, parentOrder, products, language,
                   onChange={(e) => setOutgoingSize(e.target.value)}
                   className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:border-emerald-500"
                 >
-                  {['M', 'L', 'XL', 'XXL'].map(sz => {
-                    const st = outgoingProduct ? getStockForSize(outgoingProduct, sz) : 0;
+                  {getProductSizes(outgoingProduct).map(sz => {
+                    const st = outgoingProduct ? getAvailableStock(outgoingProduct, sz) : 0;
                     return (
                       <option key={sz} value={sz} disabled={st <= 0}>
                         {sz} ({st > 0 ? st : t.outOfStock})

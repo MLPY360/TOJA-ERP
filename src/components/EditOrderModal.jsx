@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Trash2, Tag, Percent, ShieldAlert } from 'lucide-react';
-import { useStore, normalizePhone } from '../store/useStore';
+import { useStore, normalizePhone, getAvailableStock, getProductSizes } from '../store/useStore';
 import { translations } from '../translations';
 
 export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
@@ -22,13 +22,6 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
     if (!clean || !blacklist) return null;
     return blacklist.find(b => b.phone === clean);
   }, [phone, blacklist]);
-
-  const getStockForSize = (product, size) => {
-    if (!product) return 0;
-    const initial = (product.initial && product.initial[size]) || 0;
-    const sold = (product.sold && product.sold[size]) || 0;
-    return Math.max(0, initial - sold);
-  };
 
   // Discount state
   const [discountType, setDiscountType] = useState('percentage');
@@ -134,6 +127,17 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
     const newItems = [...items];
     if (field === 'qty') {
       newItems[index][field] = Math.max(1, parseInt(value) || 1);
+    } else if (field === 'productId') {
+      newItems[index].productId = value;
+      const product = products.find(p => p.id === value);
+      if (product) {
+        const productSizes = getProductSizes(product);
+        const currentStock = getAvailableStock(product, newItems[index].size);
+        if (currentStock <= 0) {
+          const firstAvailable = productSizes.find(s => getAvailableStock(product, s) > 0);
+          newItems[index].size = firstAvailable || productSizes[0] || 'M';
+        }
+      }
     } else {
       newItems[index][field] = value;
     }
@@ -211,7 +215,8 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
                 <div className="flex flex-col gap-3">
                   {items.map((item, index) => {
                     const selectedProduct = products.find(p => p.id === item.productId);
-                    const selectedStock = selectedProduct ? getStockForSize(selectedProduct, item.size) : null;
+                    const selectedStock = selectedProduct ? getAvailableStock(selectedProduct, item.size) : null;
+                    const availableSizes = getProductSizes(selectedProduct);
 
                     return (
                       <div key={index} className="flex flex-col sm:flex-row gap-3 sm:items-end p-4 sm:p-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -233,8 +238,8 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
                               )}
                             </div>
                             <select value={item.size} onChange={e => updateItem(index, 'size', e.target.value)} className="w-full h-11 px-3 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-[#597867] text-start">
-                              {(selectedProduct && Object.keys(selectedProduct.initialStock || {}).length > 0 ? Object.keys(selectedProduct.initialStock) : ['M', 'L', 'XL', 'XXL']).map(sz => {
-                                const szStock = selectedProduct ? getStockForSize(selectedProduct, sz) : null;
+                              {availableSizes.map(sz => {
+                                const szStock = selectedProduct ? getAvailableStock(selectedProduct, sz) : null;
                                 const isOOS = szStock !== null && szStock <= 0;
                                 return (
                                   <option key={sz} value={sz} disabled={isOOS}>
