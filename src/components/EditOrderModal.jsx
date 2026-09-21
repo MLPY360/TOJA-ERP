@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Trash2, Tag, Percent, ShieldAlert } from 'lucide-react';
-import { useStore, normalizePhone, getAvailableStock, getProductSizes } from '../store/useStore';
+import { useStore, normalizePhone, getAvailableStock, getProductSizes, normalizeSize } from '../store/useStore';
 import { translations } from '../translations';
 
 export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
@@ -34,7 +34,14 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
       setGovernorate(orderToEdit.governorate || '');
       setAddress(orderToEdit.address || '');
       setShippingFee(orderToEdit.shippingFee?.toString() || '0');
-      setItems(orderToEdit.items && orderToEdit.items.length > 0 ? [...orderToEdit.items] : [{ productId: '', size: 'M', qty: 1 }]);
+      setItems(
+        orderToEdit.items && orderToEdit.items.length > 0
+          ? orderToEdit.items.map(item => ({
+              ...item,
+              size: normalizeSize(item.size) || 'M'
+            }))
+          : [{ productId: '', size: 'M', qty: 1 }]
+      );
       setDiscountType(orderToEdit.discount?.type || 'percentage');
       setDiscountValue(orderToEdit.discount?.value !== undefined && orderToEdit.discount?.value !== null ? orderToEdit.discount.value.toString() : '');
     }
@@ -94,7 +101,13 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const validItems = items.filter(item => item.productId && item.qty > 0);
+    const validItems = items
+      .filter(item => item.productId && item.qty > 0)
+      .map(item => ({
+        ...item,
+        size: normalizeSize(item.size) || 'M'
+      }));
+
     if (validItems.length === 0) {
       alert("Please add at least one valid item.");
       return;
@@ -127,6 +140,8 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
     const newItems = [...items];
     if (field === 'qty') {
       newItems[index][field] = Math.max(1, parseInt(value) || 1);
+    } else if (field === 'size') {
+      newItems[index].size = normalizeSize(value) || 'M';
     } else if (field === 'productId') {
       newItems[index].productId = value;
       const product = products.find(p => p.id === value);
@@ -135,7 +150,7 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
         const currentStock = getAvailableStock(product, newItems[index].size);
         if (currentStock <= 0) {
           const firstAvailable = productSizes.find(s => getAvailableStock(product, s) > 0);
-          newItems[index].size = firstAvailable || productSizes[0] || 'M';
+          newItems[index].size = normalizeSize(firstAvailable || productSizes[0] || 'M');
         }
       }
     } else {

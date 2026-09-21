@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Trash2, Tag, Percent, ShieldAlert, AlertTriangle } from 'lucide-react';
-import { useStore, normalizePhone, getAvailableStock, getProductSizes } from '../store/useStore';
+import { useStore, normalizePhone, getAvailableStock, getProductSizes, normalizeSize } from '../store/useStore';
 import { translations } from '../translations';
 
 export default function AddOrderModal({ isOpen, onClose }) {
@@ -82,8 +82,14 @@ export default function AddOrderModal({ isOpen, onClose }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Validate items
-    const validItems = items.filter(item => item.productId && item.qty > 0);
+    // Validate and normalize items
+    const validItems = items
+      .filter(item => item.productId && item.qty > 0)
+      .map(item => ({
+        ...item,
+        size: normalizeSize(item.size) || 'M'
+      }));
+
     if (validItems.length === 0) {
       alert("Please add at least one valid item.");
       return;
@@ -148,6 +154,8 @@ export default function AddOrderModal({ isOpen, onClose }) {
     const newItems = [...items];
     if (field === 'qty') {
       newItems[index][field] = Math.max(1, parseInt(value) || 1);
+    } else if (field === 'size') {
+      newItems[index].size = normalizeSize(value) || 'M';
     } else if (field === 'productId') {
       newItems[index].productId = value;
       const product = products.find(p => p.id === value);
@@ -155,7 +163,7 @@ export default function AddOrderModal({ isOpen, onClose }) {
         const productSizes = getProductSizes(product);
         // Automatically set selectedSize to the first size with available stock > 0
         const firstAvailable = productSizes.find(s => getAvailableStock(product, s) > 0);
-        newItems[index].size = firstAvailable || productSizes[0] || 'M';
+        newItems[index].size = normalizeSize(firstAvailable || productSizes[0] || 'M');
       }
     } else {
       newItems[index][field] = value;

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { X, ImagePlus, Loader2, Plus, Trash2 } from 'lucide-react';
-import { useStore } from '../store/useStore';
+import { useStore, normalizeSize } from '../store/useStore';
 import { uploadImageToImgBB } from '../utils/imgbb';
 import { translations } from '../translations';
 
-const DEFAULT_PRESETS = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', 'Oversize', 'Free Size'];
+const DEFAULT_PRESETS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'XXXXL', 'Oversize', 'Free Size'];
 
 export default function AddProductModal({ isOpen, onClose, editProduct }) {
   const { addProduct, updateProduct, language } = useStore();
@@ -32,9 +32,16 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
         costPrice: String(editProduct.costPrice || ''),
         sellingPrice: String(editProduct.sellingPrice || '')
       });
-      const loadedSizes = editProduct.initialStock || {};
+      const rawSizes = editProduct.initialStock || {};
+      const loadedSizes = {};
+      Object.entries(rawSizes).forEach(([sz, qty]) => {
+        const norm = normalizeSize(sz);
+        if (norm) {
+          loadedSizes[norm] = (loadedSizes[norm] || 0) + (parseInt(qty, 10) || 0);
+        }
+      });
       if (Object.keys(loadedSizes).length > 0) {
-        setSizes({ ...loadedSizes });
+        setSizes(loadedSizes);
       } else {
         setSizes({ M: 0, L: 0, XL: 0, XXL: 0 });
       }
@@ -56,7 +63,7 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
   };
 
   const addSize = (sizeName) => {
-    const clean = sizeName.trim().toUpperCase();
+    const clean = normalizeSize(sizeName);
     if (!clean) return;
     setSizes(prev => ({ ...prev, [clean]: prev[clean] !== undefined ? prev[clean] : 0 }));
     setCustomSizeInput('');
@@ -90,7 +97,10 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
 
     const initialStock = {};
     Object.entries(sizes).forEach(([sz, qty]) => {
-      initialStock[sz] = parseInt(qty, 10) || 0;
+      const norm = normalizeSize(sz);
+      if (norm) {
+        initialStock[norm] = (initialStock[norm] || 0) + (parseInt(qty, 10) || 0);
+      }
     });
 
     const data = {

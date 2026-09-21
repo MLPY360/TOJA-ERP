@@ -14,28 +14,64 @@ export const normalizePhone = (phone) => {
   return cleaned;
 };
 
+export const normalizeSize = (size) => {
+  if (!size) return '';
+  const trimmed = String(size).trim().toUpperCase();
+  // Alias resolution: Convert 2XL to XXL, 3XL to XXXL, etc.
+  if (trimmed === '2XL') return 'XXL';
+  if (trimmed === '3XL') return 'XXXL';
+  if (trimmed === '4XL') return 'XXXXL';
+  return trimmed;
+};
+
 export const getAvailableStock = (product, size) => {
   if (!product || !size) return 0;
-  const sizeStr = String(size);
-  const sizeUpper = sizeStr.toUpperCase();
+  const norm = normalizeSize(size);
+  const rawStr = String(size).trim();
+  const rawUpper = rawStr.toUpperCase();
 
-  // 1. Resolve Initial Stock (support dynamic object, legacy flat keys, and case-insensitivity)
-  const initial = product.initialStock?.[sizeStr] 
-               ?? product.initialStock?.[sizeUpper]
-               ?? product.initial?.[sizeStr]
-               ?? product.initial?.[sizeUpper]
-               ?? product[`initialStock${sizeStr}`] 
-               ?? product[`initialStock${sizeUpper}`] 
-               ?? product[`stock${sizeStr}`] 
-               ?? product[`stock${sizeUpper}`] 
-               ?? 0;
+  // Keys to check in order of priority:
+  // 1. Normalized size (e.g. 'XXL')
+  // 2. Raw uppercase / trimmed
+  // 3. Alternative aliases (e.g. if 'XXL', check '2XL'; if '2XL', check 'XXL')
+  const keys = [norm, rawUpper, rawStr];
+  if (norm === 'XXL' || rawUpper === '2XL') {
+    keys.push('XXL', '2XL');
+  } else if (norm === 'XXXL' || rawUpper === '3XL') {
+    keys.push('XXXL', '3XL');
+  } else if (norm === 'XXXXL' || rawUpper === '4XL') {
+    keys.push('XXXXL', '4XL');
+  }
+  const uniqueKeys = Array.from(new Set(keys.filter(Boolean)));
+
+  // 1. Resolve Initial Stock (support dynamic object, legacy flat keys, aliases, and case-insensitivity)
+  let initial = undefined;
+  for (const k of uniqueKeys) {
+    const val = product.initialStock?.[k] 
+             ?? product.initial?.[k] 
+             ?? product[`initialStock${k}`] 
+             ?? product[`initialStock${k.toLowerCase()}`]
+             ?? product[`stock${k}`] 
+             ?? product[`stock${k.toLowerCase()}`];
+    if (val !== undefined && val !== null) {
+      initial = Number(val);
+      break;
+    }
+  }
+  if (initial === undefined) initial = 0;
   
   // 2. Resolve Sold Count
-  const sold = product.sold?.[sizeStr] 
-            ?? product.sold?.[sizeUpper]
-            ?? product[`sold${sizeStr}`] 
-            ?? product[`sold${sizeUpper}`] 
-            ?? 0;
+  let sold = undefined;
+  for (const k of uniqueKeys) {
+    const val = product.sold?.[k] 
+             ?? product[`sold${k}`] 
+             ?? product[`sold${k.toLowerCase()}`];
+    if (val !== undefined && val !== null) {
+      sold = Number(val);
+      break;
+    }
+  }
+  if (sold === undefined) sold = 0;
 
   return Math.max(0, Number(initial) - Number(sold));
 };
@@ -46,21 +82,30 @@ export const getProductSizes = (product) => {
   
   // 1. From dynamic initialStock object
   if (product.initialStock && typeof product.initialStock === 'object') {
-    Object.keys(product.initialStock).forEach(s => sizes.add(s));
+    Object.keys(product.initialStock).forEach(s => {
+      const n = normalizeSize(s);
+      if (n) sizes.add(n);
+    });
   }
   
   // 2. From dynamic initial object (fallback)
   if (product.initial && typeof product.initial === 'object') {
-    Object.keys(product.initial).forEach(s => sizes.add(s));
+    Object.keys(product.initial).forEach(s => {
+      const n = normalizeSize(s);
+      if (n) sizes.add(n);
+    });
   }
 
   // 3. From dynamic sold object
   if (product.sold && typeof product.sold === 'object') {
-    Object.keys(product.sold).forEach(s => sizes.add(s));
+    Object.keys(product.sold).forEach(s => {
+      const n = normalizeSize(s);
+      if (n) sizes.add(n);
+    });
   }
   
   // 4. From legacy flat keys (initialStockM, stockM, soldM, etc.)
-  const candidateSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '4XL', 'Oversize', 'Free Size'];
+  const candidateSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', 'XXXL', '3XL', 'XXXXL', '4XL', 'Oversize', 'Free Size'];
   candidateSizes.forEach(s => {
     if (
       product[`initialStock${s}`] !== undefined || 
@@ -70,7 +115,8 @@ export const getProductSizes = (product) => {
       product[`sold${s}`] !== undefined ||
       product[`sold${s.toLowerCase()}`] !== undefined
     ) {
-      sizes.add(s);
+      const n = normalizeSize(s);
+      if (n) sizes.add(n);
     }
   });
 
@@ -78,7 +124,7 @@ export const getProductSizes = (product) => {
     return ['M', 'L', 'XL', 'XXL'];
   }
 
-  const standardOrder = ['XS', 'S', 'M', 'L', 'XL', '2XL', 'XXL', '3XL', '4XL', 'Oversize', 'Free Size'];
+  const standardOrder = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'XXXXL', 'Oversize', 'Free Size'];
   const arr = Array.from(sizes);
   arr.sort((a, b) => {
     const idxA = standardOrder.indexOf(a);
@@ -112,6 +158,9 @@ export const calculateBatchCapitalMetrics = (products = [], orders = [], expense
       const init = Number(
         p.initialStock?.[sz] 
         ?? p.initialStock?.[sz.toUpperCase()]
+        ?? (sz === 'XXL' ? p.initialStock?.['2XL'] : undefined)
+        ?? (sz === 'XXXL' ? p.initialStock?.['3XL'] : undefined)
+        ?? (sz === 'XXXXL' ? p.initialStock?.['4XL'] : undefined)
         ?? p.initial?.[sz] 
         ?? p[`initialStock${sz}`] 
         ?? p[`stock${sz}`] 
@@ -373,21 +422,42 @@ export const useStore = create((set, get) => ({
   },
 
   addProduct: async (product) => {
+    const initialStock = {};
+    if (product.initialStock && typeof product.initialStock === 'object') {
+      Object.entries(product.initialStock).forEach(([k, v]) => {
+        const norm = normalizeSize(k);
+        if (norm) {
+          initialStock[norm] = (initialStock[norm] || 0) + (Number(v) || 0);
+        }
+      });
+    }
     const newProduct = {
       ...product,
+      initialStock,
       sold: { M: 0, L: 0, XL: 0, XXL: 0 },
       createdAt: new Date().toISOString()
-    }
+    };
     await addDoc(collection(db, "products"), newProduct);
-    get().logActivity(`Added new product: ${product.name} (${product.sku})`)
+    get().logActivity(`Added new product: ${product.name} (${product.sku})`);
   },
 
   updateProduct: async (id, data) => {
     const productRef = doc(db, "products", id);
-    await updateDoc(productRef, data);
+    const updatePayload = { ...data };
+    if (data.initialStock && typeof data.initialStock === 'object') {
+      const normalizedInitial = {};
+      Object.entries(data.initialStock).forEach(([k, v]) => {
+        const norm = normalizeSize(k);
+        if (norm) {
+          normalizedInitial[norm] = (normalizedInitial[norm] || 0) + (Number(v) || 0);
+        }
+      });
+      updatePayload.initialStock = normalizedInitial;
+    }
+    await updateDoc(productRef, updatePayload);
     const product = get().products.find(p => p.id === id);
     if (product) {
-      get().logActivity(`Updated product details: ${product.name} (${product.sku})`)
+      get().logActivity(`Updated product details: ${product.name} (${product.sku})`);
     }
   },
 
@@ -441,19 +511,19 @@ export const useStore = create((set, get) => ({
 
   reportDefectiveItem: async (id, size, qty = 1, reason = 'Defective garment') => {
     try {
+      const normSize = normalizeSize(size) || 'M';
       const productRef = doc(db, "products", id);
       const productSnap = await getDoc(productRef);
       if (productSnap.exists()) {
         const data = productSnap.data();
-        const currentInitial = (data.initialStock && data.initialStock[size]) || 0;
-        const currentSold = (data.sold && data.sold[size]) || 0;
-        const availableStock = currentInitial - currentSold;
+        const availableStock = getAvailableStock(data, normSize);
+        const currentInitial = (data.initialStock && (data.initialStock[normSize] ?? (normSize === 'XXL' ? data.initialStock['2XL'] : undefined))) || 0;
         const deductQty = Math.min(availableStock > 0 ? availableStock : qty, qty);
 
         if (deductQty > 0) {
           const newInitial = Math.max(0, currentInitial - deductQty);
           await updateDoc(productRef, {
-            [`initialStock.${size}`]: newInitial
+            [`initialStock.${normSize}`]: newInitial
           });
 
           // Post expense automatically to reflect write-off in Net Profit
@@ -464,7 +534,7 @@ export const useStore = create((set, get) => ({
               category: 'Defective Stock Write-Off',
               amount: costImpact,
               date: new Date().toISOString().split('T')[0],
-              description: `Defective write-off: ${data.name} (${size} x${deductQty}) - ${reason}`
+              description: `Defective write-off: ${data.name} (${normSize} x${deductQty}) - ${reason}`
             });
           }
 
@@ -473,7 +543,7 @@ export const useStore = create((set, get) => ({
             productId: id,
             productName: data.name,
             sku: data.sku,
-            size,
+            size: normSize,
             changeType: 'DEFECT_WRITEOFF',
             quantityDelta: -deductQty,
             previousStock: availableStock,
@@ -482,7 +552,7 @@ export const useStore = create((set, get) => ({
             costImpactEGP: costImpact
           });
 
-          get().logActivity(`تم تسجيل إهلاك تالف: ${data.name} (مقاس ${size} × ${deductQty}) - تكلفة: ${costImpact} ج.م`);
+          get().logActivity(`تم تسجيل إهلاك تالف: ${data.name} (مقاس ${normSize} × ${deductQty}) - تكلفة: ${costImpact} ج.م`);
         }
       }
     } catch (error) {
@@ -492,18 +562,18 @@ export const useStore = create((set, get) => ({
 
   adjustStock: async ({ productId, size, delta, changeType = 'AUDIT_CORRECTION', reason = '' }) => {
     try {
+      const normSize = normalizeSize(size) || 'M';
       const productRef = doc(db, "products", productId);
       const productSnap = await getDoc(productRef);
       if (!productSnap.exists()) return;
 
       const data = productSnap.data();
-      const currentInitial = (data.initialStock && data.initialStock[size]) || 0;
-      const currentSold = (data.sold && data.sold[size]) || 0;
-      const currentAvailable = currentInitial - currentSold;
+      const currentInitial = (data.initialStock && (data.initialStock[normSize] ?? (normSize === 'XXL' ? data.initialStock['2XL'] : undefined))) || 0;
+      const currentAvailable = getAvailableStock(data, normSize);
       const newInitial = Math.max(0, currentInitial + delta);
 
       await updateDoc(productRef, {
-        [`initialStock.${size}`]: newInitial
+        [`initialStock.${normSize}`]: newInitial
       });
 
       const costPrice = Number(data.costPrice) || 0;
@@ -515,7 +585,7 @@ export const useStore = create((set, get) => ({
           category: 'Defective Stock Write-Off',
           amount: costImpact,
           date: new Date().toISOString().split('T')[0],
-          description: `Defective write-off: ${data.name} (${size} x${Math.abs(delta)}) - ${reason}`
+          description: `Defective write-off: ${data.name} (${normSize} x${Math.abs(delta)}) - ${reason}`
         });
       }
 
@@ -523,7 +593,7 @@ export const useStore = create((set, get) => ({
         productId,
         productName: data.name,
         sku: data.sku,
-        size,
+        size: normSize,
         changeType,
         quantityDelta: delta,
         previousStock: currentAvailable,
@@ -532,7 +602,7 @@ export const useStore = create((set, get) => ({
         costImpactEGP: costImpact
       });
 
-      get().logActivity(`Adjusted stock for ${data.name} (${size}): ${delta > 0 ? `+${delta}` : delta} [${changeType}]`);
+      get().logActivity(`Adjusted stock for ${data.name} (${normSize}): ${delta > 0 ? `+${delta}` : delta} [${changeType}]`);
       return { success: true };
     } catch (error) {
       console.error("Failed to adjust stock:", error);
@@ -544,8 +614,14 @@ export const useStore = create((set, get) => ({
     try {
       console.log('Attempting to add new order:', orderData);
       const displayId = `ORD-${Date.now().toString().slice(-4)}`;
+      const normalizedItems = (orderData.items || []).map(item => ({
+        ...item,
+        size: normalizeSize(item.size) || 'M'
+      }));
+
       const newOrder = {
         ...orderData,
+        items: normalizedItems,
         displayId,
         status: 'Pending',
         createdAt: new Date().toISOString(),
@@ -557,7 +633,7 @@ export const useStore = create((set, get) => ({
       console.log('Order saved successfully with ID:', docRef.id);
 
       console.log('Step 2: Deducting stock for order items');
-      for (const item of orderData.items) {
+      for (const item of normalizedItems) {
         try {
           const productId = item.productId || item.id;
           if (!productId) continue;
@@ -574,11 +650,12 @@ export const useStore = create((set, get) => ({
           const productData = productSnap.data();
           const currentSold = productData.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
           const qty = Number(item.qty) || Number(item.quantity) || 1;
+          const sz = normalizeSize(item.size) || 'M';
 
           await updateDoc(productRef, {
-            [`sold.${item.size}`]: (currentSold[item.size] || 0) + qty
+            [`sold.${sz}`]: (currentSold[sz] || 0) + qty
           });
-          console.log(`Successfully updated sold count for ${item.size}`);
+          console.log(`Successfully updated sold count for ${sz}`);
         } catch (err) {
           console.error("Error updating product stock:", err);
         }
@@ -602,7 +679,7 @@ export const useStore = create((set, get) => ({
     const isNewRestockingStatus = newStatus === 'Cancelled' || newStatus === 'Returned';
 
     if (isOldRestockingStatus && !isNewRestockingStatus) {
-      for (const item of order.items) {
+      for (const item of order.items || []) {
         const productId = item.productId || item.id;
         if (!productId) continue;
 
@@ -612,12 +689,13 @@ export const useStore = create((set, get) => ({
           const data = productSnap.data();
           const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
           const qty = Number(item.qty) || Number(item.quantity) || 1;
-          const newSold = { ...currentSold, [item.size]: (currentSold[item.size] || 0) + qty };
+          const sz = normalizeSize(item.size) || 'M';
+          const newSold = { ...currentSold, [sz]: (currentSold[sz] || 0) + qty };
           await updateDoc(productRef, { sold: newSold });
         }
       }
     } else if (!isOldRestockingStatus && isNewRestockingStatus) {
-      for (const item of order.items) {
+      for (const item of order.items || []) {
         const productId = item.productId || item.id;
         if (!productId) continue;
 
@@ -627,7 +705,8 @@ export const useStore = create((set, get) => ({
           const data = productSnap.data();
           const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
           const qty = Number(item.qty) || Number(item.quantity) || 1;
-          const newSold = { ...currentSold, [item.size]: Math.max(0, (currentSold[item.size] || 0) - qty) };
+          const sz = normalizeSize(item.size) || 'M';
+          const newSold = { ...currentSold, [sz]: Math.max(0, (currentSold[sz] || 0) - qty) };
           await updateDoc(productRef, { sold: newSold });
         }
       }
@@ -653,12 +732,18 @@ export const useStore = create((set, get) => ({
 
       const orderRef = doc(db, 'orders', orderId);
 
+      // Normalize items in updatedData
+      const normalizedUpdatedItems = (updatedData.items || []).map(item => ({
+        ...item,
+        size: normalizeSize(item.size) || 'M'
+      }));
+
       // Only update inventory if status is not cancelled/returned
       const isActiveOrder = order.status !== 'Cancelled' && order.status !== 'Returned';
 
       if (isActiveOrder) {
         // Revert old items
-        for (const item of order.items) {
+        for (const item of order.items || []) {
           const productId = item.productId || item.id;
           if (!productId) continue;
 
@@ -668,12 +753,13 @@ export const useStore = create((set, get) => ({
             const data = productSnap.data();
             const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
             const qty = Number(item.qty) || Number(item.quantity) || 1;
-            const newSold = { ...currentSold, [item.size]: Math.max(0, (currentSold[item.size] || 0) - qty) };
+            const sz = normalizeSize(item.size) || 'M';
+            const newSold = { ...currentSold, [sz]: Math.max(0, (currentSold[sz] || 0) - qty) };
             await updateDoc(productRef, { sold: newSold });
           }
         }
         // Apply new items
-        for (const item of updatedData.items) {
+        for (const item of normalizedUpdatedItems) {
           const productId = item.productId || item.id;
           if (!productId) continue;
 
@@ -683,13 +769,17 @@ export const useStore = create((set, get) => ({
             const data = productSnap.data();
             const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
             const qty = Number(item.qty) || Number(item.quantity) || 1;
-            const newSold = { ...currentSold, [item.size]: (currentSold[item.size] || 0) + qty };
+            const sz = normalizeSize(item.size) || 'M';
+            const newSold = { ...currentSold, [sz]: (currentSold[sz] || 0) + qty };
             await updateDoc(productRef, { sold: newSold });
           }
         }
       }
 
-      await updateDoc(orderRef, updatedData);
+      await updateDoc(orderRef, {
+        ...updatedData,
+        items: normalizedUpdatedItems
+      });
       get().logActivity(`Updated order details: ${order.displayId || orderId}`);
     } catch (error) {
       console.error('Failed to update order:', error);
@@ -792,7 +882,8 @@ export const useStore = create((set, get) => ({
             const data = productSnap.data();
             const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
             const qty = Number(item.qty) || Number(item.quantity) || 1;
-            const newSold = { ...currentSold, [item.size]: Math.max(0, (currentSold[item.size] || 0) - qty) };
+            const sz = normalizeSize(item.size) || 'M';
+            const newSold = { ...currentSold, [sz]: Math.max(0, (currentSold[sz] || 0) - qty) };
             await updateDoc(productRef, { sold: newSold });
           }
         }
@@ -827,7 +918,8 @@ export const useStore = create((set, get) => ({
             const data = productSnap.data();
             const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
             const qty = Number(item.qty) || Number(item.quantity) || 1;
-            const newSold = { ...currentSold, [item.size]: (currentSold[item.size] || 0) + qty };
+            const sz = normalizeSize(item.size) || 'M';
+            const newSold = { ...currentSold, [sz]: (currentSold[sz] || 0) + qty };
             await updateDoc(productRef, { sold: newSold });
           }
         }
@@ -907,6 +999,9 @@ export const useStore = create((set, get) => ({
       const displayId = `EXC-${Date.now().toString().slice(-4)}`;
       const replacementProduct = get().products.find(p => p.id === outgoingItem.productId);
 
+      const outSize = normalizeSize(outgoingItem.size) || 'M';
+      const inSize = normalizeSize(incomingItem?.size) || 'M';
+
       // 1. Decrement outgoing replacement item from inventory
       if (replacementProduct) {
         const productRef = doc(db, 'products', replacementProduct.id);
@@ -916,14 +1011,14 @@ export const useStore = create((set, get) => ({
           const currentSold = pData.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
           const qty = Number(outgoingItem.qty) || 1;
           await updateDoc(productRef, {
-            [`sold.${outgoingItem.size}`]: (currentSold[outgoingItem.size] || 0) + qty
+            [`sold.${outSize}`]: (currentSold[outSize] || 0) + qty
           });
 
           await get().logInventoryMovement({
             productId: replacementProduct.id,
             productName: replacementProduct.name,
             sku: replacementProduct.sku,
-            size: outgoingItem.size,
+            size: outSize,
             changeType: 'EXCHANGE_OUT',
             quantityDelta: -qty,
             relatedOrderId: displayId,
@@ -943,14 +1038,14 @@ export const useStore = create((set, get) => ({
             const currentSold = rData.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
             const retQty = Number(incomingItem.qty) || 1;
             await updateDoc(returnedRef, {
-              [`sold.${incomingItem.size}`]: Math.max(0, (currentSold[incomingItem.size] || 0) - retQty)
+              [`sold.${inSize}`]: Math.max(0, (currentSold[inSize] || 0) - retQty)
             });
 
             await get().logInventoryMovement({
               productId: returnedProduct.id,
               productName: returnedProduct.name,
               sku: returnedProduct.sku,
-              size: incomingItem.size,
+              size: inSize,
               changeType: 'EXCHANGE_IN',
               quantityDelta: retQty,
               relatedOrderId: displayId,
@@ -978,14 +1073,14 @@ export const useStore = create((set, get) => ({
         items: [{
           productId: outgoingItem.productId,
           productName: replacementProduct?.name || 'Replacement Item',
-          size: outgoingItem.size,
+          size: outSize,
           qty: outQty,
           unitPrice
         }],
         incomingItem: {
           productId: incomingItem?.productId || '',
           productName: incomingItem?.productName || '',
-          size: incomingItem?.size || 'M',
+          size: inSize,
           qty: Number(incomingItem?.qty) || 1,
           restocked: true
         },
@@ -1009,7 +1104,7 @@ export const useStore = create((set, get) => ({
       // 4. Append note to parent order
       await get().addOrderNote(
         parentOrder.id,
-        `تم إنشاء طلب استبدال مرتبط برقم: ${displayId} (مقاس بديل: ${outgoingItem.size} مقابل ${incomingItem?.size})`
+        `تم إنشاء طلب استبدال مرتبط برقم: ${displayId} (مقاس بديل: ${outSize} مقابل ${inSize})`
       );
 
       get().logActivity(`Created exchange order ${displayId} for parent ${parentOrder.displayId || parentOrder.id}`);
@@ -1041,15 +1136,16 @@ export const useStore = create((set, get) => ({
             if (productSnap.exists()) {
               const pData = productSnap.data();
               const currentSold = pData.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
+              const sz = normalizeSize(item.size) || 'M';
               await updateDoc(productRef, {
-                [`sold.${item.size}`]: Math.max(0, (currentSold[item.size] || 0) - itemQty)
+                [`sold.${sz}`]: Math.max(0, (currentSold[sz] || 0) - itemQty)
               });
 
               await get().logInventoryMovement({
                 productId: product.id,
                 productName: product.name,
                 sku: product.sku,
-                size: item.size,
+                size: sz,
                 changeType: 'ORDER_RETURN',
                 quantityDelta: itemQty,
                 relatedOrderId: order.displayId || order.id,

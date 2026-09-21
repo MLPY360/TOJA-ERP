@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Minus, Search, PackageX, Trash2, Pencil, AlertTriangle, History, SlidersHorizontal, X, Check } from 'lucide-react';
-import { useStore, getAvailableStock, getProductSizes } from '../store/useStore';
+import { useStore, getAvailableStock, getProductSizes, normalizeSize } from '../store/useStore';
 import { translations } from '../translations';
 import ImageLightbox from './ImageLightbox';
 
@@ -190,7 +190,7 @@ function AdjustStockModal({ isOpen, onClose, products, preselectedProduct, prese
     } else if (products && products.length > 0 && !selectedProductId) {
       setSelectedProductId(products[0].id);
     }
-    if (preselectedSize) setSelectedSize(preselectedSize);
+    if (preselectedSize) setSelectedSize(normalizeSize(preselectedSize) || 'M');
     if (preselectedType) {
       setChangeType(preselectedType);
       if (preselectedType === 'DEFECT_WRITEOFF') setDirection('deduct');
@@ -212,7 +212,7 @@ function AdjustStockModal({ isOpen, onClose, products, preselectedProduct, prese
     setSubmitting(true);
     await onAdjust({
       productId: product.id,
-      size: selectedSize,
+      size: normalizeSize(selectedSize) || 'M',
       delta: calculatedDelta,
       changeType,
       reason: reason || (changeType === 'DEFECT_WRITEOFF' ? 'Defective garment write-off' : 'Manual stock adjustment')
@@ -413,7 +413,15 @@ export default function InventoryTable({ onEdit }) {
     const pSizes = getProductSizes(p);
     return pSizes.some(size => {
       const init = Number(
-        p.initialStock?.[size] ?? p.initialStock?.[size.toUpperCase()] ?? p.initial?.[size] ?? p[`initialStock${size}`] ?? p[`stock${size}`] ?? 0
+        p.initialStock?.[size] ?? 
+        p.initialStock?.[size.toUpperCase()] ?? 
+        (size === 'XXL' ? p.initialStock?.['2XL'] : undefined) ?? 
+        (size === 'XXXL' ? p.initialStock?.['3XL'] : undefined) ?? 
+        (size === 'XXXXL' ? p.initialStock?.['4XL'] : undefined) ?? 
+        p.initial?.[size] ?? 
+        p[`initialStock${size}`] ?? 
+        p[`stock${size}`] ?? 
+        0
       );
       const avail = getAvailableStock(p, size);
       return init > 0 && avail <= 2;
@@ -434,7 +442,7 @@ export default function InventoryTable({ onEdit }) {
     setAdjustModalState({
       isOpen: true,
       product,
-      size,
+      size: normalizeSize(size) || 'M',
       type
     });
   };
@@ -530,7 +538,12 @@ export default function InventoryTable({ onEdit }) {
                 const sizes = getProductSizes(product);
                 const currentStock = sizes.reduce((sum, sz) => sum + getAvailableStock(product, sz), 0);
                 const totalSold = sizes.reduce((sum, sz) => {
-                  const s = product.sold?.[sz] ?? product.sold?.[sz.toUpperCase()] ?? product[`sold${sz}`] ?? 0;
+                  const s = product.sold?.[sz] ?? 
+                            product.sold?.[sz.toUpperCase()] ?? 
+                            (sz === 'XXL' ? product.sold?.['2XL'] : undefined) ?? 
+                            (sz === 'XXXL' ? product.sold?.['3XL'] : undefined) ?? 
+                            (sz === 'XXXXL' ? product.sold?.['4XL'] : undefined) ?? 
+                            product[`sold${sz}`] ?? 0;
                   return sum + Math.max(0, Number(s) || 0);
                 }, 0);
                 const profitPerItem = (product.sellingPrice || 0) - (product.costPrice || 0);
@@ -569,7 +582,15 @@ export default function InventoryTable({ onEdit }) {
                       <div className="flex flex-wrap gap-1.5 max-w-[170px]">
                         {sizes.map((size) => {
                           const sizeInitial = Number(
-                            product.initialStock?.[size] ?? product.initialStock?.[size.toUpperCase()] ?? product.initial?.[size] ?? product[`initialStock${size}`] ?? product[`stock${size}`] ?? 0
+                            product.initialStock?.[size] ?? 
+                            product.initialStock?.[size.toUpperCase()] ?? 
+                            (size === 'XXL' ? product.initialStock?.['2XL'] : undefined) ?? 
+                            (size === 'XXXL' ? product.initialStock?.['3XL'] : undefined) ?? 
+                            (size === 'XXXXL' ? product.initialStock?.['4XL'] : undefined) ?? 
+                            product.initial?.[size] ?? 
+                            product[`initialStock${size}`] ?? 
+                            product[`stock${size}`] ?? 
+                            0
                           );
                           const sizeStock = getAvailableStock(product, size);
                           if (sizeInitial === 0 && sizeStock === 0) return null;
@@ -609,9 +630,23 @@ export default function InventoryTable({ onEdit }) {
                     <td className="p-4 align-middle">
                       <div className="flex flex-col gap-1 w-max mx-auto">
                         {sizes.map((size) => {
-                          const sizeInitial = product.initialStock?.[size] || 0;
-                          const sizeSold = product.sold?.[size] || 0;
-                          if (sizeInitial === 0) return null;
+                          const sizeInitial = Number(
+                            product.initialStock?.[size] ?? 
+                            (size === 'XXL' ? product.initialStock?.['2XL'] : undefined) ?? 
+                            (size === 'XXXL' ? product.initialStock?.['3XL'] : undefined) ?? 
+                            (size === 'XXXXL' ? product.initialStock?.['4XL'] : undefined) ?? 
+                            product[`initialStock${size}`] ?? 
+                            0
+                          );
+                          const sizeSold = Number(
+                            product.sold?.[size] ?? 
+                            (size === 'XXL' ? product.sold?.['2XL'] : undefined) ?? 
+                            (size === 'XXXL' ? product.sold?.['3XL'] : undefined) ?? 
+                            (size === 'XXXXL' ? product.sold?.['4XL'] : undefined) ?? 
+                            product[`sold${size}`] ?? 
+                            0
+                          );
+                          if (sizeInitial === 0 && sizeSold === 0) return null;
                           return (
                             <div key={size} className="flex items-center justify-between gap-2">
                               <span className="w-5 text-[10px] font-bold text-slate-400">{size}</span>
@@ -701,7 +736,12 @@ export default function InventoryTable({ onEdit }) {
             const sizes = getProductSizes(product);
             const currentStock = sizes.reduce((sum, sz) => sum + getAvailableStock(product, sz), 0);
             const totalSold = sizes.reduce((sum, sz) => {
-              const s = product.sold?.[sz] ?? product.sold?.[sz.toUpperCase()] ?? product[`sold${sz}`] ?? 0;
+              const s = product.sold?.[sz] ?? 
+                        product.sold?.[sz.toUpperCase()] ?? 
+                        (sz === 'XXL' ? product.sold?.['2XL'] : undefined) ?? 
+                        (sz === 'XXXL' ? product.sold?.['3XL'] : undefined) ?? 
+                        (sz === 'XXXXL' ? product.sold?.['4XL'] : undefined) ?? 
+                        product[`sold${sz}`] ?? 0;
               return sum + Math.max(0, Number(s) || 0);
             }, 0);
             const profitPerItem = (product.sellingPrice || 0) - (product.costPrice || 0);
@@ -715,7 +755,7 @@ export default function InventoryTable({ onEdit }) {
                     {product.imageUrl ? (
                       <img 
                         src={product.imageUrl} 
-                        alt={product.name}
+                        alt={product.name} 
                         className="w-12 h-12 rounded-full object-cover border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
                         onClick={() => setLightboxImg(product.imageUrl)} 
                       />
@@ -756,7 +796,15 @@ export default function InventoryTable({ onEdit }) {
                   <div className="grid grid-cols-4 gap-2">
                     {sizes.map(size => {
                       const sizeInitial = Number(
-                        product.initialStock?.[size] ?? product.initialStock?.[size.toUpperCase()] ?? product.initial?.[size] ?? product[`initialStock${size}`] ?? product[`stock${size}`] ?? 0
+                        product.initialStock?.[size] ?? 
+                        product.initialStock?.[size.toUpperCase()] ?? 
+                        (size === 'XXL' ? product.initialStock?.['2XL'] : undefined) ?? 
+                        (size === 'XXXL' ? product.initialStock?.['3XL'] : undefined) ?? 
+                        (size === 'XXXXL' ? product.initialStock?.['4XL'] : undefined) ?? 
+                        product.initial?.[size] ?? 
+                        product[`initialStock${size}`] ?? 
+                        product[`stock${size}`] ?? 
+                        0
                       );
                       const sizeStock = getAvailableStock(product, size);
                       if (sizeInitial === 0 && sizeStock === 0) return null;
