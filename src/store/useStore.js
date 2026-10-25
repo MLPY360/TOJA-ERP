@@ -2,6 +2,10 @@ import { create } from 'zustand'
 import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, getDoc, setDoc } from 'firebase/firestore'
 import { db, auth } from '../firebase'
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth'
+import { logger } from '../utils/logger'
+import { SUPER_ADMIN_EMAILS, isSuperAdmin } from '../utils/authConfig'
+
+export { SUPER_ADMIN_EMAILS, isSuperAdmin }
 
 export const normalizePhone = (phone) => {
   if (!phone) return '';
@@ -290,9 +294,14 @@ export const useStore = create((set, get) => ({
   inventoryMovements: [],
   userRole: (() => {
     try {
-      return localStorage.getItem('toja_user_role') || 'admin';
+      const rawUser = localStorage.getItem('toja_user');
+      const user = rawUser ? JSON.parse(rawUser) : null;
+      if (user && isSuperAdmin(user.email)) {
+        return localStorage.getItem('toja_user_role') || 'admin';
+      }
+      return 'operations';
     } catch {
-      return 'admin';
+      return 'operations';
     }
   })(),
   currentUser: (() => {
@@ -314,15 +323,49 @@ export const useStore = create((set, get) => ({
   listenersInitialized: false,
 
   initAuthListener: () => {
-    onAuthStateChanged(auth, (user) => {
+    onAuthStateChanged(auth, async (user) => {
       if (user) {
-        const userData = { id: user.uid, name: user.displayName || user.email.split('@')[0], email: user.email, role: "User" };
-        set({ currentUser: userData });
+        const isSuper = isSuperAdmin(user.email);
+        let role = 'operations';
+
+        if (isSuper) {
+          // Super Admins default to 'admin' (or keep selected role if testing other roles)
+          const savedRole = localStorage.getItem('toja_user_role');
+          role = savedRole || 'admin';
+          localStorage.setItem('toja_user_role', role);
+        } else {
+          // For all other users, default to 'operations' or read assigned role from users/{uid}
+          try {
+            const userSnap = await getDoc(doc(db, "users", user.uid));
+            if (userSnap.exists()) {
+              const data = userSnap.data();
+              if (data.role && data.role !== 'admin') {
+                role = data.role;
+              }
+            }
+          } catch (e) {
+            console.warn("Could not fetch user document for role:", e);
+          }
+          // Strict lockdown: non-super admin CANNOT have 'admin' role under any circumstance
+          if (role === 'admin') {
+            role = 'operations';
+          }
+          localStorage.setItem('toja_user_role', role);
+        }
+
+        const userData = {
+          id: user.uid,
+          name: user.displayName || user.email.split('@')[0],
+          email: user.email,
+          role
+        };
+        set({ currentUser: userData, userRole: role });
         localStorage.setItem('toja_user', JSON.stringify(userData));
         get().initializeListeners();
       } else {
-        set({ currentUser: null });
+        set({ currentUser: null, userRole: 'operations' });
         localStorage.removeItem('toja_user');
+        localStorage.removeItem('toja_user_role');
       }
     });
   },
@@ -376,6 +419,16 @@ export const useStore = create((set, get) => ({
   },
 
   setUserRole: (role) => {
+    const user = get().currentUser;
+    if (!isSuperAdmin(user?.email)) {
+      console.warn("Unauthorized role switch attempt blocked for:", user?.email);
+      logger.warn('RBAC_ROLE_SWITCH_BLOCKED', 'auth', {
+        userId: user?.id,
+        userEmail: user?.email,
+        attemptedRole: role
+      }, `Non-super admin attempted to switch role to ${role}`);
+      return;
+    }
     set({ userRole: role });
     try {
       localStorage.setItem('toja_user_role', role);
@@ -389,11 +442,13 @@ export const useStore = create((set, get) => ({
 
   login: async (email, password) => {
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCred = await signInWithEmailAndPassword(auth, email, password);
+      logger.info('AUTH_LOGIN', 'auth', { email, uid: userCred.user?.uid }, `Logged into the system as ${email}`);
       get().logActivity('Logged into the system');
       return { success: true };
     } catch (error) {
       console.error("Login failed:", error);
+      logger.error('AUTH_LOGIN_FAILED', 'auth', error, { email }, `Login failed for ${email}: ${error.code}`);
       return { success: false, error: error.code };
     }
   },
@@ -402,11 +457,13 @@ export const useStore = create((set, get) => ({
     try {
       const user = get().currentUser;
       if (user) {
+        logger.info('AUTH_LOGOUT', 'auth', { userId: user.id, name: user.name, email: user.email }, `User ${user.name} logged out`);
         get().logActivity('Logged out of the system');
       }
       await signOut(auth);
     } catch (error) {
       console.error("Logout failed:", error);
+      logger.error('AUTH_LOGOUT_FAILED', 'auth', error, {}, 'Logout error');
     }
   },
 
@@ -418,54 +475,92 @@ export const useStore = create((set, get) => ({
       action,
       timestamp: new Date().toISOString()
     }
-    await addDoc(collection(db, "activityLogs"), log);
+    try {
+      await addDoc(collection(db, "activityLogs"), log);
+    } catch (err) {
+      console.warn("Failed to write to activityLogs:", err);
+    }
   },
 
   addProduct: async (product) => {
-    const initialStock = {};
-    if (product.initialStock && typeof product.initialStock === 'object') {
-      Object.entries(product.initialStock).forEach(([k, v]) => {
-        const norm = normalizeSize(k);
-        if (norm) {
-          initialStock[norm] = (initialStock[norm] || 0) + (Number(v) || 0);
-        }
-      });
+    try {
+      const initialStock = {};
+      if (product.initialStock && typeof product.initialStock === 'object') {
+        Object.entries(product.initialStock).forEach(([k, v]) => {
+          const norm = normalizeSize(k);
+          if (norm) {
+            initialStock[norm] = (initialStock[norm] || 0) + (Number(v) || 0);
+          }
+        });
+      }
+      const newProduct = {
+        ...product,
+        initialStock,
+        sold: { M: 0, L: 0, XL: 0, XXL: 0 },
+        createdAt: new Date().toISOString()
+      };
+      const docRef = await addDoc(collection(db, "products"), newProduct);
+      logger.info('PRODUCT_CREATE', 'inventory', {
+        productId: docRef.id,
+        name: product.name,
+        sku: product.sku,
+        costPrice: product.costPrice,
+        sellingPrice: product.sellingPrice,
+        initialStock
+      }, `Added new product: ${product.name} (${product.sku})`);
+      get().logActivity(`Added new product: ${product.name} (${product.sku})`);
+    } catch (error) {
+      console.error("Failed to add product:", error);
+      logger.error('PRODUCT_CREATE', 'inventory', error, { sku: product?.sku, name: product?.name });
     }
-    const newProduct = {
-      ...product,
-      initialStock,
-      sold: { M: 0, L: 0, XL: 0, XXL: 0 },
-      createdAt: new Date().toISOString()
-    };
-    await addDoc(collection(db, "products"), newProduct);
-    get().logActivity(`Added new product: ${product.name} (${product.sku})`);
   },
 
   updateProduct: async (id, data) => {
-    const productRef = doc(db, "products", id);
-    const updatePayload = { ...data };
-    if (data.initialStock && typeof data.initialStock === 'object') {
-      const normalizedInitial = {};
-      Object.entries(data.initialStock).forEach(([k, v]) => {
-        const norm = normalizeSize(k);
-        if (norm) {
-          normalizedInitial[norm] = (normalizedInitial[norm] || 0) + (Number(v) || 0);
-        }
-      });
-      updatePayload.initialStock = normalizedInitial;
-    }
-    await updateDoc(productRef, updatePayload);
-    const product = get().products.find(p => p.id === id);
-    if (product) {
-      get().logActivity(`Updated product details: ${product.name} (${product.sku})`);
+    try {
+      const productRef = doc(db, "products", id);
+      const updatePayload = { ...data };
+      if (data.initialStock && typeof data.initialStock === 'object') {
+        const normalizedInitial = {};
+        Object.entries(data.initialStock).forEach(([k, v]) => {
+          const norm = normalizeSize(k);
+          if (norm) {
+            normalizedInitial[norm] = (normalizedInitial[norm] || 0) + (Number(v) || 0);
+          }
+        });
+        updatePayload.initialStock = normalizedInitial;
+      }
+      await updateDoc(productRef, updatePayload);
+      const product = get().products.find(p => p.id === id);
+      logger.info('PRODUCT_UPDATE', 'inventory', {
+        productId: id,
+        sku: product?.sku,
+        name: product?.name,
+        updatedFields: Object.keys(data)
+      }, `Updated product details: ${product?.name || id}`);
+      if (product) {
+        get().logActivity(`Updated product details: ${product.name} (${product.sku})`);
+      }
+    } catch (error) {
+      console.error("Failed to update product:", error);
+      logger.error('PRODUCT_UPDATE', 'inventory', error, { productId: id });
     }
   },
 
   deleteProduct: async (id) => {
-    const product = get().products.find(p => p.id === id);
-    await deleteDoc(doc(db, "products", id));
-    if (product) {
-      get().logActivity(`Deleted product: ${product.name} (${product.sku})`)
+    try {
+      const product = get().products.find(p => p.id === id);
+      await deleteDoc(doc(db, "products", id));
+      logger.warn('PRODUCT_DELETE', 'inventory', {
+        productId: id,
+        sku: product?.sku,
+        name: product?.name
+      }, `Deleted product: ${product?.name || id} (${product?.sku || ''})`);
+      if (product) {
+        get().logActivity(`Deleted product: ${product.name} (${product.sku})`);
+      }
+    } catch (error) {
+      console.error("Failed to delete product:", error);
+      logger.error('PRODUCT_DELETE', 'inventory', error, { productId: id });
     }
   },
 
@@ -552,11 +647,23 @@ export const useStore = create((set, get) => ({
             costImpactEGP: costImpact
           });
 
+          logger.warn('DEFECT_WRITEOFF', 'inventory', {
+            productId: id,
+            productName: data.name,
+            sku: data.sku,
+            size: normSize,
+            deductQty,
+            costImpactEGP: costImpact,
+            reason,
+            remainingStock: availableStock - deductQty
+          }, `Reported defective write-off: ${data.name} (${normSize} x${deductQty}) - ${costImpact} EGP`);
+
           get().logActivity(`تم تسجيل إهلاك تالف: ${data.name} (مقاس ${normSize} × ${deductQty}) - تكلفة: ${costImpact} ج.م`);
         }
       }
     } catch (error) {
       console.error("Failed to report defective item:", error);
+      logger.error('DEFECT_WRITEOFF', 'inventory', error, { productId: id, size, qty, reason });
     }
   },
 
@@ -602,15 +709,39 @@ export const useStore = create((set, get) => ({
         costImpactEGP: costImpact
       });
 
+      logger.info('INVENTORY_ADJUST', 'inventory', {
+        productId,
+        productName: data.name,
+        sku: data.sku,
+        size: normSize,
+        delta,
+        previousStock: currentAvailable,
+        newStock: currentAvailable + delta,
+        changeType,
+        reason,
+        costImpactEGP: costImpact
+      }, `Adjusted stock for ${data.name} (${normSize}): ${delta > 0 ? `+${delta}` : delta} [${changeType}]`);
+
+      if (currentAvailable + delta <= 0) {
+        logger.warn('INVENTORY_STOCK_DEPLETED', 'inventory', {
+          productId,
+          sku: data.sku,
+          size: normSize,
+          stock: currentAvailable + delta
+        }, `Stock depleted to 0 for ${data.name} (${normSize})`);
+      }
+
       get().logActivity(`Adjusted stock for ${data.name} (${normSize}): ${delta > 0 ? `+${delta}` : delta} [${changeType}]`);
       return { success: true };
     } catch (error) {
       console.error("Failed to adjust stock:", error);
+      logger.error('INVENTORY_ADJUST', 'inventory', error, { productId, size, delta, changeType, reason });
       return { success: false, error };
     }
   },
 
   addOrder: async (orderData) => {
+    logger.newRequestId();
     try {
       console.log('Attempting to add new order:', orderData);
       const displayId = `ORD-${Date.now().toString().slice(-4)}`;
@@ -644,6 +775,7 @@ export const useStore = create((set, get) => ({
 
           if (!productSnap.exists()) {
             console.error(`Product doc NOT FOUND for ID: ${productId}`);
+            logger.warn('ORDER_PRODUCT_NOT_FOUND', 'orders', { productId, orderId: docRef.id, displayId }, `Product ${productId} not found during stock deduction`);
             continue;
           }
 
@@ -658,61 +790,95 @@ export const useStore = create((set, get) => ({
           console.log(`Successfully updated sold count for ${sz}`);
         } catch (err) {
           console.error("Error updating product stock:", err);
+          logger.error('ORDER_STOCK_DEDUCT_FAILED', 'inventory', err, { orderId: docRef.id, item });
         }
       }
 
+      logger.info('ORDER_CREATE', 'orders', {
+        orderId: docRef.id,
+        displayId,
+        customerName: newOrder.customerName,
+        phone: newOrder.phone,
+        governorate: newOrder.governorate,
+        itemCount: normalizedItems.length,
+        total: newOrder.total ?? newOrder.totals?.grandTotal ?? 0
+      }, `Created new order ${displayId} for ${newOrder.customerName}`);
+
       get().logActivity(`Added new order for ${newOrder.customerName} (${displayId})`);
       console.log('Order process completed successfully');
+      return { success: true, orderId: docRef.id, displayId };
     } catch (error) {
       console.error('Failed to add order:', error);
+      logger.error('ORDER_CREATE', 'orders', error, { customerName: orderData.customerName, phone: orderData.phone }, 'Failed to add order');
     }
   },
 
   updateOrderStatus: async (orderId, newStatus) => {
-    const order = get().orders.find(o => o.id === orderId);
-    if (!order) return;
+    try {
+      const order = get().orders.find(o => o.id === orderId);
+      if (!order) return;
 
-    const orderRef = doc(db, "orders", orderId);
-    await updateDoc(orderRef, { status: newStatus });
+      const orderRef = doc(db, "orders", orderId);
+      await updateDoc(orderRef, { status: newStatus });
 
-    const isOldRestockingStatus = order.status === 'Cancelled' || order.status === 'Returned';
-    const isNewRestockingStatus = newStatus === 'Cancelled' || newStatus === 'Returned';
+      const isOldRestockingStatus = order.status === 'Cancelled' || order.status === 'Returned';
+      const isNewRestockingStatus = newStatus === 'Cancelled' || newStatus === 'Returned';
 
-    if (isOldRestockingStatus && !isNewRestockingStatus) {
-      for (const item of order.items || []) {
-        const productId = item.productId || item.id;
-        if (!productId) continue;
+      if (isOldRestockingStatus && !isNewRestockingStatus) {
+        for (const item of order.items || []) {
+          const productId = item.productId || item.id;
+          if (!productId) continue;
 
-        const productRef = doc(db, "products", productId);
-        const productSnap = await getDoc(productRef);
-        if (productSnap.exists()) {
-          const data = productSnap.data();
-          const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
-          const qty = Number(item.qty) || Number(item.quantity) || 1;
-          const sz = normalizeSize(item.size) || 'M';
-          const newSold = { ...currentSold, [sz]: (currentSold[sz] || 0) + qty };
-          await updateDoc(productRef, { sold: newSold });
+          const productRef = doc(db, "products", productId);
+          const productSnap = await getDoc(productRef);
+          if (productSnap.exists()) {
+            const data = productSnap.data();
+            const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
+            const qty = Number(item.qty) || Number(item.quantity) || 1;
+            const sz = normalizeSize(item.size) || 'M';
+            const newSold = { ...currentSold, [sz]: (currentSold[sz] || 0) + qty };
+            await updateDoc(productRef, { sold: newSold });
+          }
+        }
+      } else if (!isOldRestockingStatus && isNewRestockingStatus) {
+        for (const item of order.items || []) {
+          const productId = item.productId || item.id;
+          if (!productId) continue;
+
+          const productRef = doc(db, "products", productId);
+          const productSnap = await getDoc(productRef);
+          if (productSnap.exists()) {
+            const data = productSnap.data();
+            const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
+            const qty = Number(item.qty) || Number(item.quantity) || 1;
+            const sz = normalizeSize(item.size) || 'M';
+            const newSold = { ...currentSold, [sz]: Math.max(0, (currentSold[sz] || 0) - qty) };
+            await updateDoc(productRef, { sold: newSold });
+          }
         }
       }
-    } else if (!isOldRestockingStatus && isNewRestockingStatus) {
-      for (const item of order.items || []) {
-        const productId = item.productId || item.id;
-        if (!productId) continue;
 
-        const productRef = doc(db, "products", productId);
-        const productSnap = await getDoc(productRef);
-        if (productSnap.exists()) {
-          const data = productSnap.data();
-          const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
-          const qty = Number(item.qty) || Number(item.quantity) || 1;
-          const sz = normalizeSize(item.size) || 'M';
-          const newSold = { ...currentSold, [sz]: Math.max(0, (currentSold[sz] || 0) - qty) };
-          await updateDoc(productRef, { sold: newSold });
-        }
+      if (isNewRestockingStatus) {
+        logger.warn('ORDER_STATUS_RESTOCKED', 'orders', {
+          orderId,
+          displayId: order.displayId || orderId,
+          oldStatus: order.status,
+          newStatus
+        }, `Order ${order.displayId || orderId} transitioned to ${newStatus}; items returned to inventory`);
+      } else {
+        logger.info('ORDER_STATUS_UPDATE', 'orders', {
+          orderId,
+          displayId: order.displayId || orderId,
+          oldStatus: order.status,
+          newStatus
+        }, `Updated order ${order.displayId || orderId} status to ${newStatus}`);
       }
+
+      get().logActivity(`Updated order ${order.displayId || orderId} status to ${newStatus}`);
+    } catch (error) {
+      console.error('Failed to update order status:', error);
+      logger.error('ORDER_STATUS_UPDATE', 'orders', error, { orderId, newStatus });
     }
-
-    get().logActivity(`Updated order ${order.displayId || orderId} status to ${newStatus}`);
   },
 
   updateOrderReturnReason: async (orderId, reason) => {
@@ -780,21 +946,39 @@ export const useStore = create((set, get) => ({
         ...updatedData,
         items: normalizedUpdatedItems
       });
+
+      logger.info('ORDER_UPDATE', 'orders', {
+        orderId,
+        displayId: order.displayId || orderId,
+        updatedFields: Object.keys(updatedData),
+        itemsCount: normalizedUpdatedItems.length
+      }, `Updated order details: ${order.displayId || orderId}`);
+
       get().logActivity(`Updated order details: ${order.displayId || orderId}`);
     } catch (error) {
       console.error('Failed to update order:', error);
+      logger.error('ORDER_UPDATE', 'orders', error, { orderId });
     }
   },
 
   addExpense: async (expenseData) => {
     try {
-      await addDoc(collection(db, "expenses"), {
+      const docRef = await addDoc(collection(db, "expenses"), {
         ...expenseData,
         createdAt: new Date().toISOString()
       });
+      logger.info('EXPENSE_ADD', 'finance', {
+        expenseId: docRef.id,
+        category: expenseData.category,
+        amount: expenseData.amount,
+        date: expenseData.date
+      }, `Added expense: ${expenseData.category} - ${expenseData.amount} EGP`);
       get().logActivity(`Added expense: ${expenseData.category} - ${expenseData.amount}`);
+      return { success: true, id: docRef.id };
     } catch (error) {
       console.error("Failed to add expense:", error);
+      logger.error('EXPENSE_ADD', 'finance', error, { category: expenseData?.category, amount: expenseData?.amount });
+      return { success: false, error };
     }
   },
 
@@ -802,11 +986,19 @@ export const useStore = create((set, get) => ({
     try {
       const expense = get().expenses.find(e => e.id === id);
       await deleteDoc(doc(db, "expenses", id));
+      logger.warn('EXPENSE_DELETE', 'finance', {
+        expenseId: id,
+        category: expense?.category,
+        amount: expense?.amount
+      }, `Deleted expense: ${expense?.category || id}`);
       if (expense) {
         get().logActivity(`Deleted expense: ${expense.category} - ${expense.amount}`);
       }
+      return { success: true };
     } catch (error) {
       console.error("Failed to delete expense:", error);
+      logger.error('EXPENSE_DELETE', 'finance', error, { expenseId: id });
+      return { success: false, error };
     }
   },
 
@@ -895,9 +1087,18 @@ export const useStore = create((set, get) => ({
         deletedAt: new Date().toISOString(),
         deletedBy: get().currentUser?.name || 'System'
       });
+
+      logger.warn('ORDER_DELETE', 'orders', {
+        orderId,
+        displayId: order.displayId || orderId,
+        customerName: order.customerName,
+        total: order.total ?? order.totals?.grandTotal ?? 0
+      }, `Soft-deleted order: ${order.displayId || orderId} (Inventory restored)`);
+
       get().logActivity(`Soft-deleted order: ${order.displayId || orderId} (Inventory restored)`);
     } catch (error) {
       console.error("Failed to soft-delete order:", error);
+      logger.error('ORDER_DELETE', 'orders', error, { orderId });
     }
   },
 
@@ -931,9 +1132,17 @@ export const useStore = create((set, get) => ({
         restoredAt: new Date().toISOString(),
         restoredBy: get().currentUser?.name || 'System'
       });
+
+      logger.info('ORDER_RESTORE', 'orders', {
+        orderId,
+        displayId: order.displayId || orderId,
+        customerName: order.customerName
+      }, `Restored order: ${order.displayId || orderId} (Inventory re-allocated)`);
+
       get().logActivity(`Restored order: ${order.displayId || orderId} (Inventory re-allocated)`);
     } catch (error) {
       console.error("Failed to restore order:", error);
+      logger.error('ORDER_RESTORE', 'orders', error, { orderId });
     }
   },
 
@@ -951,13 +1160,26 @@ export const useStore = create((set, get) => ({
           createdAt: new Date().toISOString(),
           createdBy: get().currentUser?.name || 'System'
         });
+
+        logger.warn('BLACKLIST_ADD', 'crm', {
+          phone: cleanPhone,
+          customerName: customerName || '',
+          reason: reason || 'High return risk / Delivery refusal'
+        }, `Blacklisted customer: ${customerName || cleanPhone} (${cleanPhone})`);
+
         get().logActivity(`Blacklisted customer: ${customerName || cleanPhone} (${cleanPhone})`);
       } else {
         await deleteDoc(doc(db, "blacklist", cleanPhone));
+
+        logger.info('BLACKLIST_REMOVE', 'crm', {
+          phone: cleanPhone
+        }, `Removed customer from blacklist: ${cleanPhone}`);
+
         get().logActivity(`Removed customer from blacklist: ${cleanPhone}`);
       }
     } catch (error) {
       console.error("Failed to toggle blacklist:", error);
+      logger.error('BLACKLIST_MUTATE', 'crm', error, { phone, customerName, isBlacklisted });
     }
   },
 
@@ -1107,10 +1329,21 @@ export const useStore = create((set, get) => ({
         `تم إنشاء طلب استبدال مرتبط برقم: ${displayId} (مقاس بديل: ${outSize} مقابل ${inSize})`
       );
 
+      logger.info('EXCHANGE_CREATE', 'orders', {
+        parentOrderId: parentOrder.id,
+        parentOrderDisplayId: parentOrder.displayId || parentOrder.orderId || parentOrder.id,
+        exchangeDisplayId: displayId,
+        outgoingProduct: replacementProduct?.name,
+        outgoingSize: outSize,
+        incomingSize: inSize,
+        exchangeShippingFee: fee
+      }, `Created exchange order ${displayId} for parent ${parentOrder.displayId || parentOrder.id}`);
+
       get().logActivity(`Created exchange order ${displayId} for parent ${parentOrder.displayId || parentOrder.id}`);
       return { success: true, displayId };
     } catch (error) {
       console.error("Failed to create exchange order:", error);
+      logger.error('EXCHANGE_CREATE', 'orders', error, { parentOrderId: parentOrder?.id });
       return { success: false, error };
     }
   },
@@ -1175,10 +1408,18 @@ export const useStore = create((set, get) => ({
         await get().addOrderNote(orderId, `تم تسجيل تسليم جزئي وتحديث الإجمالي إلى ${newTotal} ج.م واسترجاع المرتجعات للمخزون.`);
       }
 
+      logger.info('PARTIAL_DELIVERY', 'orders', {
+        orderId,
+        displayId: order.displayId || orderId,
+        newTotal,
+        itemsCount: itemsWithStatus.length
+      }, `Processed partial delivery for order ${order.displayId || orderId}: New total ${newTotal} EGP`);
+
       get().logActivity(`Processed partial delivery for order ${order.displayId || orderId}: New total ${newTotal} EGP`);
       return { success: true };
     } catch (error) {
       console.error("Failed to process partial delivery:", error);
+      logger.error('PARTIAL_DELIVERY', 'orders', error, { orderId });
       return { success: false, error };
     }
   },
@@ -1210,6 +1451,12 @@ export const useStore = create((set, get) => ({
           date: now.split('T')[0],
           description: `Courier fee variance for batch ${batchName} (${carrierName})`
         });
+
+        logger.warn('COURIER_FEE_VARIANCE', 'finance', {
+          batchName,
+          carrierName,
+          feeVarianceTotal
+        }, `Courier fee variance recorded as expense: ${feeVarianceTotal} EGP`);
       }
 
       // Save settlement batch log
@@ -1222,10 +1469,18 @@ export const useStore = create((set, get) => ({
         reconciledBy: userName
       });
 
+      logger.info('COURIER_RECONCILE_BATCH', 'finance', {
+        batchName: batchName || `Batch-${now.slice(0, 10)}`,
+        carrierName: carrierName || 'Courier',
+        reconciledCount: matchedOrders.length,
+        feeVarianceTotal
+      }, `Settled courier reconciliation batch: ${matchedOrders.length} orders marked Delivered - Collected (${carrierName})`);
+
       get().logActivity(`Reconciled courier settlement: ${matchedOrders.length} orders marked Delivered - Collected (${carrierName})`);
       return { success: true };
     } catch (error) {
       console.error("Failed to reconcile courier settlement:", error);
+      logger.error('COURIER_RECONCILE_BATCH', 'finance', error, { batchName, carrierName });
       return { success: false, error };
     }
   },

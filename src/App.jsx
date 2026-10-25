@@ -2,10 +2,11 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Download, ClipboardList, LogOut, Package, BarChart3, LayoutDashboard, Menu, Globe, Wallet, ShieldAlert, Users } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { useStore, calculateBatchCapitalMetrics, getAvailableStock, getProductSizes } from './store/useStore';
+import { useStore, calculateBatchCapitalMetrics, getAvailableStock, getProductSizes, isSuperAdmin } from './store/useStore';
 import { translations } from './translations';
 import LoginModal from './components/LoginModal';
 import ActivityLogs from './components/ActivityLogs';
+import SystemLogsModal from './components/SystemLogsModal';
 import DashboardCard from './components/DashboardCard';
 import ProfitChart from './components/ProfitChart';
 import BreakEvenCard from './components/BreakEvenCard';
@@ -44,6 +45,16 @@ export default function App() {
       setActiveTab('dashboard');
     }
   }, [userRole, activeTab]);
+
+  // Security Lockdown: Strict check ensuring non-super-admins are locked to non-admin roles
+  useEffect(() => {
+    if (currentUser && !isSuperAdmin(currentUser.email) && userRole === 'admin') {
+      useStore.setState({ userRole: 'operations' });
+      try {
+        localStorage.setItem('toja_user_role', 'operations');
+      } catch {}
+    }
+  }, [currentUser, userRole]);
 
   const metrics = useMemo(() => {
     let totalInStock = 0;
@@ -266,18 +277,24 @@ export default function App() {
                 </span>
               </div>
 
-              <div className="mb-4">
-                <label className="text-[10px] uppercase font-bold text-white/40 block mb-1.5">{t.switchRole}</label>
-                <select
-                  value={userRole}
-                  onChange={(e) => setUserRole(e.target.value)}
-                  className="w-full text-xs font-semibold bg-white/10 hover:bg-white/15 text-white rounded-xl px-3 py-2 border border-white/15 outline-none focus:border-[#597867] transition-colors cursor-pointer"
-                >
-                  <option value="admin" className="bg-[#181E1C] text-white">{t.roleAdmin}</option>
-                  <option value="operations" className="bg-[#181E1C] text-white">{t.roleOperations}</option>
-                  <option value="finance" className="bg-[#181E1C] text-white">{t.roleFinance}</option>
-                </select>
-              </div>
+              {/* Testing Role Switcher: Strictly Restricted to Super Admin whitelist */}
+              {isSuperAdmin(currentUser?.email) && (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[10px] uppercase font-bold text-white/40">{t.switchRole}</label>
+                    <span className="text-[9px] font-bold text-purple-400 bg-purple-500/20 px-1.5 py-0.2 rounded border border-purple-500/30">Super Admin</span>
+                  </div>
+                  <select
+                    value={userRole}
+                    onChange={(e) => setUserRole(e.target.value)}
+                    className="w-full text-xs font-semibold bg-white/10 hover:bg-white/15 text-white rounded-xl px-3 py-2 border border-white/15 outline-none focus:border-[#597867] transition-colors cursor-pointer"
+                  >
+                    <option value="admin" className="bg-[#181E1C] text-white">{t.roleAdmin}</option>
+                    <option value="operations" className="bg-[#181E1C] text-white">{t.roleOperations}</option>
+                    <option value="finance" className="bg-[#181E1C] text-white">{t.roleFinance}</option>
+                  </select>
+                </div>
+              )}
 
               <button
                 onClick={logout}
@@ -400,7 +417,13 @@ export default function App() {
           </main>
         </div>
 
-        {showLogs && <ActivityLogs onClose={() => setShowLogs(false)} />}
+        {showLogs && (
+          userRole === 'admin' ? (
+            <SystemLogsModal onClose={() => setShowLogs(false)} />
+          ) : (
+            <ActivityLogs onClose={() => setShowLogs(false)} />
+          )
+        )}
         <AddProductModal
           isOpen={modalOpen}
           onClose={() => { setModalOpen(false); setEditProduct(null); }}

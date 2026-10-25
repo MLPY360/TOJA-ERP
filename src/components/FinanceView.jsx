@@ -231,19 +231,23 @@ export default function FinanceView() {
     return exp.description.toLowerCase().includes(q) || exp.category.toLowerCase().includes(q);
   });
 
-  const handleAddExpense = (e) => {
+  const handleAddExpense = async (e) => {
     e.preventDefault();
     if (!expenseAmount || Number(expenseAmount) <= 0) return;
-    addExpense({
+    const res = await addExpense({
       category: expenseCategory,
       amount: Number(expenseAmount),
       date: expenseDate,
       description: expenseDescription
     });
-    setIsAddingExpense(false);
-    setExpenseAmount('');
-    setExpenseDescription('');
-    setExpenseDate(new Date().toISOString().split('T')[0]);
+    if (res?.success !== false) {
+      setIsAddingExpense(false);
+      setExpenseAmount('');
+      setExpenseDescription('');
+      setExpenseDate(new Date().toISOString().split('T')[0]);
+    } else {
+      alert(res?.error?.message || 'Failed to add expense. Please verify Firestore permissions.');
+    }
   };
 
   // --- Unit Economics Calculations ---
