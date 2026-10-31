@@ -27,6 +27,7 @@ export default function OrderInvoiceModal({ isOpen, onClose, order }) {
 
   const formatDate = (dateValue) => {
     if (!dateValue) return 'N/A';
+    if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return dateValue;
     if (dateValue.toDate) return dateValue.toDate().toLocaleDateString();
     return new Date(dateValue).toLocaleDateString();
   };
@@ -83,8 +84,14 @@ export default function OrderInvoiceModal({ isOpen, onClose, order }) {
               <div className="text-start sm:text-end">
                 <p className="text-sm font-black text-[#181E1C]">{displayId}</p>
                 <p className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-1 sm:justify-end">
-                  <Calendar size={12} /> {formatDate(order.createdAt)}
+                  <Calendar size={12} /> {formatDate(order.orderDate || order.createdAt)}
                 </p>
+                {order.dispatchedBy && (
+                  <p className="text-xs text-slate-700 font-bold mt-1 flex items-center gap-1 sm:justify-end">
+                    <User size={12} className="text-[#597867]" />
+                    <span>{t.dispatchedBy || 'Dispatched by'}: <strong className="text-[#597867]">{order.dispatchedBy}</strong></span>
+                  </p>
+                )}
                 <div className="mt-1">
                   <span className="inline-block text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
                     {order.status}
@@ -184,6 +191,16 @@ export default function OrderInvoiceModal({ isOpen, onClose, order }) {
                 <span className="font-extrabold text-sm text-[#181E1C]">{t.finalTotal}</span>
                 <span className="text-base font-black text-[#597867]">{cTotal.toLocaleString('en-EG')} EGP</span>
               </div>
+            </div>
+
+            {/* Printable Invoice Footer Note */}
+            <div className="text-center text-[10px] text-slate-500 font-medium border-t border-slate-100 pt-3">
+              {order.dispatchedBy && (
+                <p className="font-bold text-slate-700 text-xs mb-1">
+                  {t.dispatchedBy || 'Dispatched by'}: <span className="text-[#597867]">{order.dispatchedBy}</span>
+                </p>
+              )}
+              <p>TOJA Apparel • Thank you for your business!</p>
             </div>
           </div>
 

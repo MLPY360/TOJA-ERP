@@ -52,7 +52,8 @@ export default function ExportOrdersModal({ isOpen, onClose }) {
         
         exportData.push({
           "Order ID": order.displayId || order.id,
-          "Order Date": new Date(order.createdAt).toLocaleDateString(),
+          "Order Date": order.orderDate || (order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'N/A'),
+          "Dispatched By": order.dispatchedBy || 'N/A',
           "Customer Name": order.customerName,
           "Customer Phone": order.phone,
           "Address": `${order.governorate} - ${order.address}`,

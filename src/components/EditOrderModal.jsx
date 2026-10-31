@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Trash2, Tag, Percent, ShieldAlert } from 'lucide-react';
-import { useStore, normalizePhone, getAvailableStock, getProductSizes, normalizeSize } from '../store/useStore';
+import { useStore, normalizePhone, getAvailableStock, getProductSizes, normalizeSize, ORDER_DISPATCHERS } from '../store/useStore';
 import { translations } from '../translations';
 
 export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
@@ -13,6 +13,8 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
   const [governorate, setGovernorate] = useState('');
   const [address, setAddress] = useState('');
   const [shippingFee, setShippingFee] = useState('');
+  const [orderDate, setOrderDate] = useState('');
+  const [dispatchedBy, setDispatchedBy] = useState('');
   
   const [items, setItems] = useState([{ productId: '', size: 'M', qty: 1 }]);
 
@@ -34,6 +36,23 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
       setGovernorate(orderToEdit.governorate || '');
       setAddress(orderToEdit.address || '');
       setShippingFee(orderToEdit.shippingFee?.toString() || '0');
+
+      let defaultDate = '';
+      if (orderToEdit.orderDate) {
+        defaultDate = orderToEdit.orderDate;
+      } else if (orderToEdit.createdAt) {
+        try {
+          const dt = orderToEdit.createdAt.toDate ? orderToEdit.createdAt.toDate() : new Date(orderToEdit.createdAt);
+          defaultDate = dt.toISOString().split('T')[0];
+        } catch {
+          defaultDate = new Date().toISOString().split('T')[0];
+        }
+      } else {
+        defaultDate = new Date().toISOString().split('T')[0];
+      }
+      setOrderDate(defaultDate);
+      setDispatchedBy(orderToEdit.dispatchedBy || '');
+
       setItems(
         orderToEdit.items && orderToEdit.items.length > 0
           ? orderToEdit.items.map(item => ({
@@ -115,11 +134,18 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
 
     const hasReturnedItems = validItems.some(i => i.itemStatus === 'returned');
 
+    if (!dispatchedBy) {
+      alert(t.selectDispatcherWarning || "Please select the dispatcher / المسؤول عن الطلب");
+      return;
+    }
+
     const updatedData = {
       customerName,
       phone,
       governorate,
       address,
+      orderDate: orderDate || new Date().toISOString().split('T')[0],
+      dispatchedBy,
       items: validItems,
       shippingFee: Number(shippingFee) || 0,
       subtotal,
@@ -216,6 +242,36 @@ export default function EditOrderModal({ isOpen, onClose, orderToEdit }) {
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-start">{t.detailedAddress}</label>
                   <input required type="text" value={address} onChange={e => setAddress(e.target.value)} className="w-full h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/20 text-start" placeholder="Street, Building, Apt..." />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-start">
+                    {t.orderDate}
+                  </label>
+                  <input
+                    required
+                    type="date"
+                    value={orderDate}
+                    onChange={e => setOrderDate(e.target.value)}
+                    className="w-full h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/20 text-start"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-start">
+                    {t.dispatchedBy} <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={dispatchedBy}
+                    onChange={e => setDispatchedBy(e.target.value)}
+                    className="w-full h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/20 text-start cursor-pointer"
+                  >
+                    <option value="" disabled>
+                      {language === 'ar' ? 'اختر المسؤول عن الطلب / Select Dispatcher' : 'Select Dispatcher / اختر المسؤول عن الطلب'}
+                    </option>
+                    {ORDER_DISPATCHERS.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

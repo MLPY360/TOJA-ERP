@@ -1,11 +1,60 @@
 import { create } from 'zustand'
-import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, getDoc, setDoc } from 'firebase/firestore'
+import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db, auth } from '../firebase'
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth'
 import { logger } from '../utils/logger'
 import { SUPER_ADMIN_EMAILS, isSuperAdmin } from '../utils/authConfig'
+import { translations } from '../translations'
 
-export { SUPER_ADMIN_EMAILS, isSuperAdmin }
+export { SUPER_ADMIN_EMAILS, isSuperAdmin, translations }
+
+export const ORDER_DISPATCHERS = [
+  'Ahmed arnos',
+  'Mohamed hassan',
+  'Yossef sameh',
+  'Moustafa ebrahim'
+];
+
+export const TOJA_PARTNERS = [
+  {
+    name: 'Ahmed Arnos',
+    nameAr: 'أحمد عرنوس',
+    email: 'arnos@toja.com',
+    category: 'sales',
+    roleTitleAr: 'المبيعات والتشغيل والمصانع',
+    roleTitleEn: 'Sales & Production Ops'
+  },
+  {
+    name: 'Mohamed Hassan',
+    nameAr: 'محمد حسان',
+    email: 'mohameedhasan81@gmail.com',
+    category: 'marketing',
+    roleTitleAr: 'التسويق والحملات الإعلانية وتنسيق الأداء',
+    roleTitleEn: 'Marketing & Growth'
+  },
+  {
+    name: 'Yossef Sameh',
+    nameAr: 'يوسف سامح',
+    email: 'yossef@toja.com',
+    category: 'creative',
+    roleTitleAr: 'الهوية البصرية وتصاميم الميديا وصناعة المحتوى',
+    roleTitleEn: 'Creative & Content'
+  },
+  {
+    name: 'Moustafa Ebrahim',
+    nameAr: 'مصطفى إبراهيم',
+    email: 'moustafa@toja.com',
+    category: 'operations_shipping',
+    roleTitleAr: 'العمليات والشحن وتجهيز الطلبات والمرتجعات',
+    roleTitleEn: 'Logistics & Shipping'
+  }
+];
+export {
+  calculateProductContributionMatrix,
+  calculateCashFlowForecast,
+  simulateBatchReinvestment,
+  calculateFinancialHealthScore
+} from '../utils/financialIntelligence'
 
 export const normalizePhone = (phone) => {
   if (!phone) return '';
@@ -151,10 +200,11 @@ export const calculateBatchCapitalMetrics = (products = [], orders = [], expense
   let totalPotentialRevenue = 0;
 
   (products || []).forEach(p => {
+    if (!p) return;
     const costPrice = Number(p.costPrice) || 0;
     const sellingPrice = Number(p.sellingPrice) || 0;
 
-    const sizes = getProductSizes(p);
+    const sizes = Array.isArray(getProductSizes(p)) ? getProductSizes(p) : ['M', 'L', 'XL', 'XXL'];
     let productInitialUnits = 0;
     let productRemainingUnits = 0;
 
@@ -292,6 +342,9 @@ export const useStore = create((set, get) => ({
   partners: [],
   withdrawals: [],
   inventoryMovements: [],
+  partnerTasks: [],
+  exchangeRequests: [],
+  waitlist: [],
   userRole: (() => {
     try {
       const rawUser = localStorage.getItem('toja_user');
@@ -320,6 +373,7 @@ export const useStore = create((set, get) => ({
       return 'en';
     }
   })(),
+  translations,
   listenersInitialized: false,
 
   initAuthListener: () => {
@@ -414,6 +468,21 @@ export const useStore = create((set, get) => ({
       const inventoryMovements = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       set({ inventoryMovements });
     });
+
+    onSnapshot(collection(db, "partner_tasks"), (snapshot) => {
+      const partnerTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      set({ partnerTasks });
+    });
+
+    onSnapshot(collection(db, "exchange_requests"), (snapshot) => {
+      const exchangeRequests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      set({ exchangeRequests });
+    }, (err) => console.warn('exchange_requests listener note:', err.message));
+
+    onSnapshot(collection(db, "waitlist"), (snapshot) => {
+      const waitlist = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      set({ waitlist });
+    }, (err) => console.warn('waitlist listener note:', err.message));
 
     set({ listenersInitialized: true });
   },
@@ -750,12 +819,25 @@ export const useStore = create((set, get) => ({
         size: normalizeSize(item.size) || 'M'
       }));
 
+      const orderDateVal = orderData.orderDate || new Date().toISOString().split('T')[0];
+      let createdAtVal = new Date().toISOString();
+      if (orderData.orderDate) {
+        const [y, m, d] = orderData.orderDate.split('-').map(Number);
+        if (y && m && d) {
+          const combined = new Date();
+          combined.setFullYear(y, m - 1, d);
+          createdAtVal = combined.toISOString();
+        }
+      }
+
       const newOrder = {
         ...orderData,
+        orderDate: orderDateVal,
+        dispatchedBy: orderData.dispatchedBy || '',
         items: normalizedItems,
         displayId,
         status: 'Pending',
-        createdAt: new Date().toISOString(),
+        createdAt: orderData.createdAt || createdAtVal,
         createdBy: get().currentUser?.name || 'System'
       };
 
@@ -1488,6 +1570,120 @@ export const useStore = create((set, get) => ({
   getBatchCapitalMetrics: () => {
     const { products, orders, expenses } = get();
     return calculateBatchCapitalMetrics(products, orders, expenses);
+  },
+
+  addPartnerTask: async (taskData) => {
+    try {
+      const user = get().currentUser;
+      const newTask = {
+        title: taskData.title.trim(),
+        description: (taskData.description || '').trim(),
+        assignedTo: {
+          name: taskData.assignedTo?.name || 'Ahmed Arnos',
+          email: taskData.assignedTo?.email || ''
+        },
+        priority: taskData.priority || 'normal', // 'urgent' | 'high' | 'normal'
+        category: taskData.category || 'operations_shipping', // 'production' | 'marketing' | 'operations_shipping' | 'finance'
+        status: taskData.status || 'todo', // 'todo' | 'in_progress' | 'completed'
+        dueDate: taskData.dueDate || new Date().toISOString().split('T')[0],
+        createdAt: serverTimestamp(),
+        completedAt: taskData.status === 'completed' ? serverTimestamp() : null,
+        createdBy: user?.name || user?.email || 'Partner'
+      };
+
+      const docRef = await addDoc(collection(db, "partner_tasks"), newTask);
+      logger.info('PARTNER_TASK_CREATED', 'operations', {
+        taskId: docRef.id,
+        title: newTask.title,
+        assignedTo: newTask.assignedTo.name,
+        priority: newTask.priority
+      }, `Partner task "${newTask.title}" assigned to ${newTask.assignedTo.name}`);
+      return docRef.id;
+    } catch (error) {
+      console.error("Error adding partner task:", error);
+      logger.error('PARTNER_TASK_CREATE_FAILED', 'operations', error, { title: taskData?.title });
+      throw error;
+    }
+  },
+
+  updatePartnerTaskStatus: async (taskId, newStatus) => {
+    try {
+      const taskRef = doc(db, "partner_tasks", taskId);
+      const updates = {
+        status: newStatus,
+        completedAt: newStatus === 'completed' ? serverTimestamp() : null
+      };
+      await updateDoc(taskRef, updates);
+      logger.info('PARTNER_TASK_STATUS_UPDATED', 'operations', { taskId, newStatus }, `Partner task status updated to ${newStatus}`);
+    } catch (error) {
+      console.error("Error updating partner task status:", error);
+      throw error;
+    }
+  },
+
+  updatePartnerTask: async (taskId, updates) => {
+    try {
+      const taskRef = doc(db, "partner_tasks", taskId);
+      const sanitizedUpdates = { ...updates };
+      if (updates.status === 'completed') {
+        sanitizedUpdates.completedAt = serverTimestamp();
+      } else if (updates.status && updates.status !== 'completed') {
+        sanitizedUpdates.completedAt = null;
+      }
+      await updateDoc(taskRef, sanitizedUpdates);
+      logger.info('PARTNER_TASK_UPDATED', 'operations', { taskId }, `Partner task ${taskId} updated`);
+    } catch (error) {
+      console.error("Error updating partner task:", error);
+      throw error;
+    }
+  },
+
+  deletePartnerTask: async (taskId) => {
+    try {
+      await deleteDoc(doc(db, "partner_tasks", taskId));
+      logger.info('PARTNER_TASK_DELETED', 'operations', { taskId }, `Partner task ${taskId} deleted`);
+    } catch (error) {
+      console.error("Error deleting partner task:", error);
+      throw error;
+    }
+  },
+
+  addBatchPartnerTasks: async (tasksList) => {
+    try {
+      const user = get().currentUser;
+      const today = new Date().toISOString().split('T')[0];
+      const createdIds = [];
+
+      for (const taskData of tasksList) {
+        const partnerName = taskData.partnerName || taskData.assignedTo?.name || 'Ahmed Arnos';
+        const partnerObj = TOJA_PARTNERS.find(p => p.name === partnerName) || { name: partnerName, email: '' };
+
+        const newTask = {
+          title: (taskData.title || '').trim(),
+          description: (taskData.description || '').trim(),
+          assignedTo: {
+            name: partnerObj.name,
+            email: partnerObj.email || ''
+          },
+          priority: taskData.priority || 'high',
+          category: taskData.category || partnerObj.category || 'sales',
+          status: 'todo',
+          dueDate: taskData.dueDate || today,
+          createdAt: serverTimestamp(),
+          completedAt: null,
+          createdBy: user?.name || user?.email || 'AI Daily Dispatcher'
+        };
+
+        const docRef = await addDoc(collection(db, "partner_tasks"), newTask);
+        createdIds.push(docRef.id);
+      }
+
+      logger.info('PARTNER_TASKS_BATCH_DISPATCHED', 'operations', { count: createdIds.length }, `AI dispatched ${createdIds.length} daily operational tasks`);
+      return createdIds;
+    } catch (error) {
+      console.error("Error batch adding partner tasks:", error);
+      throw error;
+    }
   }
 }))
 

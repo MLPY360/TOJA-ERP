@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, Trash2, Tag, Percent, ShieldAlert, AlertTriangle } from 'lucide-react';
-import { useStore, normalizePhone, getAvailableStock, getProductSizes, normalizeSize } from '../store/useStore';
+import { X, Plus, Trash2, Tag, Percent, ShieldAlert, AlertTriangle, Sparkles, Wand2, Loader2, ChevronDown, ChevronUp, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useStore, normalizePhone, getAvailableStock, getProductSizes, normalizeSize, ORDER_DISPATCHERS } from '../store/useStore';
 import { translations } from '../translations';
+import { parseOrderFromText } from '../services/aiService';
 
 export default function AddOrderModal({ isOpen, onClose }) {
   const { products, addOrder, language, blacklist } = useStore();
@@ -13,8 +14,16 @@ export default function AddOrderModal({ isOpen, onClose }) {
   const [governorate, setGovernorate] = useState('');
   const [address, setAddress] = useState('');
   const [shippingFee, setShippingFee] = useState('');
+  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [dispatchedBy, setDispatchedBy] = useState('');
   
   const [items, setItems] = useState([{ productId: '', size: 'M', qty: 1 }]);
+  
+  // AI Order Parser state
+  const [aiRawText, setAiRawText] = useState('');
+  const [isAiParsing, setIsAiParsing] = useState(false);
+  const [isAiOpen, setIsAiOpen] = useState(false);
+  const [aiMessage, setAiMessage] = useState(null);
 
   // Blacklist check
   const blacklistedMatch = useMemo(() => {
@@ -80,6 +89,71 @@ export default function AddOrderModal({ isOpen, onClose }) {
     }
   };
 
+  const handleAiParse = async () => {
+    if (!aiRawText.trim()) return;
+    setIsAiParsing(true);
+    setAiMessage(null);
+    try {
+      const parsed = await parseOrderFromText(aiRawText, products);
+      if (parsed) {
+        if (parsed.customerName) setCustomerName(parsed.customerName);
+        if (parsed.phone) setPhone(parsed.phone);
+        if (parsed.governorate) setGovernorate(parsed.governorate);
+        if (parsed.detailedAddress) setAddress(parsed.detailedAddress);
+
+        if (parsed.items && Array.isArray(parsed.items) && parsed.items.length > 0) {
+          const matchedItems = parsed.items.map(aiItem => {
+            let product = products.find(p => p.sku && aiItem.sku && p.sku.toLowerCase() === String(aiItem.sku).toLowerCase());
+            if (!product && aiItem.productName) {
+              const nameLow = String(aiItem.productName).toLowerCase();
+              product = products.find(p => p.name.toLowerCase().includes(nameLow) || nameLow.includes(p.name.toLowerCase()));
+            }
+            if (!product && products.length > 0) {
+              product = products[0];
+            }
+
+            const productId = product ? product.id : '';
+            const productSizes = getProductSizes(product);
+            let chosenSize = normalizeSize(aiItem.size);
+
+            if (!productSizes.includes(chosenSize)) {
+              chosenSize = productSizes[0] || 'M';
+            }
+
+            const curStock = product ? getAvailableStock(product, chosenSize) : 0;
+            if (curStock <= 0) {
+              const inStockSize = productSizes.find(s => getAvailableStock(product, s) > 0);
+              if (inStockSize) chosenSize = inStockSize;
+            }
+
+            return {
+              productId,
+              size: chosenSize || 'M',
+              qty: Math.max(1, Number(aiItem.quantity) || 1)
+            };
+          }).filter(it => it.productId);
+
+          if (matchedItems.length > 0) {
+            setItems(matchedItems);
+          }
+        }
+
+        setAiMessage({
+          type: 'success',
+          text: t.aiOrderParseSuccess || 'Order details successfully extracted! ✨'
+        });
+      }
+    } catch (err) {
+      console.error('Failed to parse order with AI:', err);
+      setAiMessage({
+        type: 'error',
+        text: t.aiOrderParseError || 'Failed to extract order details. Please review text or try again.'
+      });
+    } finally {
+      setIsAiParsing(false);
+    }
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     // Validate and normalize items
@@ -119,11 +193,18 @@ export default function AddOrderModal({ isOpen, onClose }) {
       if (!proceed) return;
     }
 
+    if (!dispatchedBy) {
+      alert(t.selectDispatcherWarning || "Please select the dispatcher / المسؤول عن الطلب");
+      return;
+    }
+
     const orderData = {
       customerName,
       phone,
       governorate,
       address,
+      orderDate: orderDate || new Date().toISOString().split('T')[0],
+      dispatchedBy,
       items: validItems,
       shippingFee: Number(shippingFee) || 0,
       subtotal,
@@ -143,6 +224,8 @@ export default function AddOrderModal({ isOpen, onClose }) {
     setGovernorate('');
     setAddress('');
     setShippingFee('');
+    setOrderDate(new Date().toISOString().split('T')[0]);
+    setDispatchedBy('');
     setDiscountType('percentage');
     setDiscountValue('');
     setItems([{ productId: '', size: 'M', qty: 1 }]);
@@ -198,6 +281,81 @@ export default function AddOrderModal({ isOpen, onClose }) {
           <div className="flex-1 overflow-y-auto p-4 sm:p-6">
             <form id="orderForm" onSubmit={handleSubmit} className="flex flex-col gap-6">
               
+              {/* ✨ AI Magic Order Parser Card */}
+              <div className="bg-gradient-to-br from-emerald-50/70 via-teal-50/40 to-slate-50 border border-emerald-200/70 rounded-2xl p-4 shadow-xs transition-all">
+                <div 
+                  onClick={() => setIsAiOpen(!isAiOpen)}
+                  className="flex items-center justify-between cursor-pointer select-none"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-gradient-to-tr from-[#597867] to-emerald-600 text-white shadow-xs">
+                      <Sparkles size={16} className="animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-extrabold text-slate-800 flex items-center gap-1.5">
+                        <span>{t.aiOrderParser}</span>
+                        <span className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          AI Fast
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        {t.aiOrderParserSubtitle}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="p-1 rounded-lg hover:bg-emerald-100/60 text-slate-500 transition-colors">
+                    {isAiOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </div>
+                </div>
+
+                {isAiOpen && (
+                  <div className="mt-3.5 pt-3.5 border-t border-emerald-200/50 flex flex-col gap-3">
+                    <textarea
+                      rows={3}
+                      value={aiRawText}
+                      onChange={(e) => setAiRawText(e.target.value)}
+                      placeholder={t.pasteCustomerChatPlaceholder}
+                      className="w-full p-3 rounded-xl border border-emerald-200/80 bg-white text-xs sm:text-sm text-slate-700 outline-none focus:border-[#597867] focus:ring-2 focus:ring-[#597867]/20 placeholder:text-slate-400 resize-none text-start shadow-inner"
+                    />
+
+                    {aiMessage && (
+                      <div className={`p-2.5 rounded-xl text-xs font-bold flex items-center gap-2 ${
+                        aiMessage.type === 'success' 
+                          ? 'bg-emerald-100/80 text-emerald-800 border border-emerald-200'
+                          : 'bg-red-100/80 text-red-800 border border-red-200'
+                      }`}>
+                        {aiMessage.type === 'success' ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
+                        <span>{aiMessage.text}</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[11px] text-slate-500 font-medium">
+                        {t.aiOrderParserTip || '💡 استخراج فوري لاسم العميل، رقم الهاتف، العنوان، والمقاسات.'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleAiParse}
+                        disabled={isAiParsing || !aiRawText.trim()}
+                        className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#597867] to-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-700/20 hover:brightness-110 active:scale-98 disabled:opacity-50 disabled:pointer-events-none transition-all cursor-pointer min-h-[38px]"
+                      >
+                        {isAiParsing ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            <span>{t.extracting}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Wand2 size={14} />
+                            <span>{t.extractAndFill}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-start">{t.customerName}</label>
@@ -231,6 +389,36 @@ export default function AddOrderModal({ isOpen, onClose }) {
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-start">{t.detailedAddress}</label>
                   <input required type="text" value={address} onChange={e => setAddress(e.target.value)} className="w-full h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/20 text-start" placeholder="Street, Building, Apt..." />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-start">
+                    {t.orderDate}
+                  </label>
+                  <input
+                    required
+                    type="date"
+                    value={orderDate}
+                    onChange={e => setOrderDate(e.target.value)}
+                    className="w-full h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/20 text-start"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-start">
+                    {t.dispatchedBy} <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={dispatchedBy}
+                    onChange={e => setDispatchedBy(e.target.value)}
+                    className="w-full h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/20 text-start cursor-pointer"
+                  >
+                    <option value="" disabled>
+                      {language === 'ar' ? 'اختر المسؤول عن الطلب / Select Dispatcher' : 'Select Dispatcher / اختر المسؤول عن الطلب'}
+                    </option>
+                    {ORDER_DISPATCHERS.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

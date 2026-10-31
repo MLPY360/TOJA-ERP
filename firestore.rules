@@ -57,6 +57,40 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    // Per-user AI CFO Chat history
+    match /cfo_chats/{userId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Partner operations & accountability tasks
+    match /partner_tasks/{taskId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // E-Commerce Storefront: Back-in-Stock Waitlist
+    match /waitlist/{waitlistId} {
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
+    }
+
+    // E-Commerce Storefront: Size Exchange Requests
+    match /exchange_requests/{requestId} {
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
+    }
+
+    // E-Commerce Storefront: Promo Codes & Discounts
+    match /promo_codes/{codeId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // E-Commerce Storefront: General Configuration (Shipping Rates, Free Shipping, Announcement Banner)
+    match /store_config/{configId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
     // Default safety catch-all for authenticated staff
     match /{document=**} {
       allow read, write: if isAuthenticated();

@@ -1,14 +1,28 @@
-import React, { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Trash2, Wallet, DollarSign, Calendar, Tag, Search, FileText,
   Users, Download, UploadCloud, CheckCircle2, AlertTriangle, RefreshCw, FileSpreadsheet,
-  Target, TrendingUp, Factory, Package, ShieldAlert, Sparkles, ChevronDown, ChevronUp, Layers
+  Target, TrendingUp, Factory, Package, ShieldAlert, Sparkles, ChevronDown, ChevronUp, Layers,
+  Sliders, Activity, Truck, Lock, Camera, Loader2, Copy, Check, X, Bot, AlertCircle,
+  Send, MessageSquare, RotateCcw, CornerDownLeft
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { useStore, calculateBatchCapitalMetrics } from '../store/useStore';
+import { useStore, calculateBatchCapitalMetrics, isSuperAdmin } from '../store/useStore';
+import { db, auth } from '../firebase';
+import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { translations } from '../translations';
 import SettlementReportModal from './SettlementReportModal';
+import ExecutiveHealthScoreCard from './finance/ExecutiveHealthScoreCard';
+import CashFlowPredictor from './finance/CashFlowPredictor';
+import ProductContributionMatrix from './finance/ProductContributionMatrix';
+import BatchReinvestmentSimulator from './finance/BatchReinvestmentSimulator';
+import {
+  calculateProductContributionMatrix,
+  calculateCashFlowForecast,
+  calculateFinancialHealthScore
+} from '../utils/financialIntelligence';
+import { getFinancialAdvisory, parseExpenseReceipt, askFinancialAdvisorChat } from '../services/aiService';
 
 export default function FinanceView() {
   const {
@@ -17,11 +31,12 @@ export default function FinanceView() {
     partners, addPartner, updatePartner, deletePartner,
     withdrawals, addWithdrawal, deleteWithdrawal,
     bulkReconcileCourier,
-    userRole
+    userRole,
+    currentUser
   } = useStore();
   const t = translations[language];
 
-  const [activeTab, setActiveTab] = useState('expenses'); // 'expenses' | 'unit_economics' | 'partners' | 'reconciliation'
+  const [activeTab, setActiveTab] = useState('intelligence'); // 'intelligence' | 'unit_economics' | 'expenses' | 'reconciliation' | 'partners'
   const [isBatchSummaryOpen, setIsBatchSummaryOpen] = useState(true);
 
   // Expenses State
@@ -31,6 +46,28 @@ export default function FinanceView() {
   const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
   const [expenseDescription, setExpenseDescription] = useState('');
   const [expenseSearch, setExpenseSearch] = useState('');
+
+  // AI CFO Advisor Chatbot State
+  const [isCfoModalOpen, setIsCfoModalOpen] = useState(false);
+  const [cfoMessages, setCfoMessages] = useState([]);
+  const [cfoInput, setCfoInput] = useState('');
+  const [isCfoThinking, setIsCfoThinking] = useState(false);
+  const [cfoError, setCfoError] = useState(null);
+  const [isCfoCopied, setIsCfoCopied] = useState(false);
+  const [isCfoLoadingHistory, setIsCfoLoadingHistory] = useState(false);
+  const chatMessagesEndRef = useRef(null);
+
+  // Auto-scroll chat to latest message
+  useEffect(() => {
+    if (isCfoModalOpen && chatMessagesEndRef.current) {
+      chatMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [cfoMessages, isCfoThinking, isCfoModalOpen]);
+
+  // AI Receipt Scanner State
+  const receiptInputRef = useRef(null);
+  const [isScanningReceipt, setIsScanningReceipt] = useState(false);
+  const [receiptScanMessage, setReceiptScanMessage] = useState(null);
 
   // Partners State
   const [isAddingPartner, setIsAddingPartner] = useState(false);
@@ -250,6 +287,297 @@ export default function FinanceView() {
     }
   };
 
+  // --- AI Partner Financial Advisor (CFO) Multi-turn Chatbot Logic ---
+  const getLiveSystemContext = () => ({
+    capitalRecoveryRate: `${batchMetrics.rawRecoveryPct.toFixed(1)}%`,
+    collectedRevenue: `${batchMetrics.netCollectedRevenue.toLocaleString('en-EG')} EGP`,
+    remainingStockValue: `${batchMetrics.remainingStockCostValue.toLocaleString('en-EG')} EGP`,
+    targetBreakEven: `${batchMetrics.totalCapitalRequired.toLocaleString('en-EG')} EGP`,
+    remainingToBreakEven: `${batchMetrics.remainingToBreakEven.toLocaleString('en-EG')} EGP`,
+    profitZoneStatus: batchMetrics.isPureProfitZone ? 'In Pure Profit Zone' : 'Recovering Capital',
+    topStockHoldings: products.slice(0, 5).map(p => {
+      const stock = Object.values(p.initialStock || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+      return { sku: p.sku || 'N/A', name: p.name, stock };
+    })
+  });
+
+  // Helper to resolve currently logged in user ID and email
+  const getActiveUserIdentifier = () => {
+    const authUser = auth?.currentUser;
+    const uid = authUser?.uid || currentUser?.id || currentUser?.uid;
+    const email = authUser?.email || currentUser?.email;
+    const resolvedId = uid || (email ? email.replace(/[^a-zA-Z0-9]/g, '_') : 'default_user');
+    return {
+      userId: resolvedId,
+      userEmail: email || 'operations@toja.com'
+    };
+  };
+
+  // Helper to generate the default welcome briefing with live TOJA metrics
+  const createDefaultWelcomeMessage = () => {
+    const isAr = language === 'ar';
+    const isPure = batchMetrics.isPureProfitZone;
+    const statusText = isAr
+      ? (isPure
+          ? '🚀 في منطقة الأرباح الصافية'
+          : `⏳ متبقي ${batchMetrics.remainingToBreakEven.toLocaleString('en-EG')} ج.م للتعادل`)
+      : (isPure
+          ? '🚀 In Pure Profit Zone'
+          : `⏳ ${batchMetrics.remainingToBreakEven.toLocaleString('en-EG')} EGP remaining to break-even`);
+
+    const text = isAr
+      ? `أهلاً يا شركاء توجا (أحمد عرنوس، محمد حسان، يوسف سامح، مصطفى إبراهيم) 👋\nأنا المستشار المالي والشريك التنفيذي للبراند (AI CFO). قمت بفحص بيانات الأرقام اللحظية:\n\n• نسبة استرداد رأس المال: **${batchMetrics.rawRecoveryPct.toFixed(1)}%**\n• الكاش المحصل الفعلي: **${batchMetrics.netCollectedRevenue.toLocaleString('en-EG')} ج.م**\n• قيمة بضاعة المخزن المتبقية: **${batchMetrics.remainingStockCostValue.toLocaleString('en-EG')} ج.م**\n• الوضع الحالي: **${statusText}**\n\nجاهز لمناقشة أي قرار مالي أو تشغيلي معكم (سحب الأرباح، تسييل موديلات، أو تسعير وتخطيط الدفعة القادمة). تفضلوا بالسؤال مباشرة أو اضغطوا على أحد الاقتراحات السريعة!`
+      : `Hello TOJA Partners (Ahmed Arnos, Mohamed Hassan, Yossef Sameh, Moustafa Ebrahim) 👋\nI am your Executive AI CFO & Financial Advisor. I reviewed our real-time metrics:\n\n• Capital Recovery Rate: **${batchMetrics.rawRecoveryPct.toFixed(1)}%**\n• Net Collected Cash: **${batchMetrics.netCollectedRevenue.toLocaleString('en-EG')} EGP**\n• Warehouse Stock Valuation: **${batchMetrics.remainingStockCostValue.toLocaleString('en-EG')} EGP**\n• Current Status: **${statusText}**\n\nReady to discuss dividends, batch pricing, liquidating slow movers, or funding the upcoming collection. Ask me anything or tap one of the quick suggestions below!`;
+
+    return {
+      id: `cfo-welcome-${Date.now()}`,
+      role: 'assistant',
+      text,
+      content: text,
+      timestamp: new Date().toISOString()
+    };
+  };
+
+  // Syncs current chat history to Firestore under cfo_chats/{userId}
+  const syncChatToFirestore = async (messagesList) => {
+    try {
+      const { userId, userEmail } = getActiveUserIdentifier();
+      if (!userId) return;
+      const docRef = doc(db, 'cfo_chats', userId);
+
+      const sanitizedMessages = (messagesList || []).map((m, idx) => ({
+        id: m.id || `msg-${Date.now()}-${idx}`,
+        role: m.role || 'user',
+        text: m.text || m.content || '',
+        timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : (m.timestamp || new Date().toISOString())
+      }));
+
+      await setDoc(docRef, {
+        userId,
+        userEmail,
+        updatedAt: serverTimestamp(),
+        messages: sanitizedMessages
+      }, { merge: true });
+    } catch (err) {
+      console.warn('[CFO Chat] Failed to sync messages to Firestore:', err);
+    }
+  };
+
+  const handleOpenCfoAdvisor = async () => {
+    setIsCfoModalOpen(true);
+    setCfoError(null);
+
+    // If already loaded in memory, no need to re-fetch
+    if (cfoMessages.length > 0) return;
+
+    setIsCfoLoadingHistory(true);
+    try {
+      const { userId, userEmail } = getActiveUserIdentifier();
+      const docRef = doc(db, 'cfo_chats', userId);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists() && Array.isArray(docSnap.data()?.messages) && docSnap.data().messages.length > 0) {
+        const loadedMessages = docSnap.data().messages.map(m => ({
+          id: m.id || `msg-${Math.random()}`,
+          role: m.role || 'user',
+          text: m.text || m.content || '',
+          content: m.text || m.content || '',
+          timestamp: m.timestamp || new Date().toISOString()
+        }));
+        setCfoMessages(loadedMessages);
+      } else {
+        const defaultWelcome = createDefaultWelcomeMessage();
+        setCfoMessages([defaultWelcome]);
+        await syncChatToFirestore([defaultWelcome]);
+      }
+    } catch (err) {
+      console.warn('[CFO Chat] Failed to load chat history from Firestore:', err);
+      const defaultWelcome = createDefaultWelcomeMessage();
+      setCfoMessages([defaultWelcome]);
+    } finally {
+      setIsCfoLoadingHistory(false);
+    }
+  };
+
+  const handleSendCfoMessage = async (customPrompt) => {
+    const textToSend = (customPrompt || cfoInput).trim();
+    if (!textToSend || isCfoThinking) return;
+
+    setCfoInput('');
+    setCfoError(null);
+
+    const lastMsg = cfoMessages[cfoMessages.length - 1];
+    let newHistory = cfoMessages;
+
+    // Only append user message if it wasn't already added (e.g. during a retry)
+    if (!lastMsg || lastMsg.role !== 'user' || (lastMsg.text || lastMsg.content) !== textToSend) {
+      const userMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        text: textToSend,
+        content: textToSend,
+        timestamp: new Date().toISOString()
+      };
+      newHistory = [...cfoMessages, userMessage];
+      setCfoMessages(newHistory);
+      // Immediately persist user message to Firestore
+      syncChatToFirestore(newHistory);
+    }
+
+    setIsCfoThinking(true);
+
+    try {
+      const sysContext = getLiveSystemContext();
+      // Pass recent messages for context
+      const historyForAi = newHistory
+        .slice(-8)
+        .map(m => ({ role: m.role, content: m.text || m.content }));
+
+      const reply = await askFinancialAdvisorChat(
+        historyForAi,
+        textToSend,
+        sysContext
+      );
+
+      const assistantMessage = {
+        id: `ai-${Date.now()}`,
+        role: 'assistant',
+        text: reply,
+        content: reply,
+        timestamp: new Date().toISOString()
+      };
+
+      const finalHistory = [...newHistory, assistantMessage];
+      setCfoMessages(finalHistory);
+      syncChatToFirestore(finalHistory);
+    } catch (err) {
+      console.error("CFO CHAT ERROR:", err);
+      const rawMsg = err?.message || String(err || '');
+      let cleanMessage = rawMsg || 'حدث خطأ غير متوقع أثناء معالجة الاستشارة.';
+      if (rawMsg.includes('503') || rawMsg.includes('high demand') || rawMsg.includes('UNAVAILABLE')) {
+        cleanMessage = '⚠️ ضغط مؤقت على سيرفرات الذكاء الاصطناعي (503)، يرجى الضغط على زر "إعادة المحاولة" بعد لحظات.';
+      }
+      setCfoError(cleanMessage);
+
+      const errorMessage = {
+        id: `err-${Date.now()}`,
+        role: 'assistant',
+        text: `⚠️ تعذر استلام الرد: ${cleanMessage}`,
+        content: `⚠️ تعذر استلام الرد: ${cleanMessage}`,
+        timestamp: new Date().toISOString()
+      };
+      const finalHistory = [...newHistory, errorMessage];
+      setCfoMessages(finalHistory);
+      syncChatToFirestore(finalHistory);
+    } finally {
+      setIsCfoThinking(false);
+    }
+  };
+
+  const handleCopyChatTranscript = () => {
+    if (cfoMessages.length === 0) return;
+    const transcriptText = cfoMessages.map(m => {
+      const prefix = m.role === 'user' ? '👤 سؤال الشركاء:' : '🤖 المستشار المالي (AI CFO):';
+      return `${prefix}\n${m.text || m.content}`;
+    }).join('\n\n─────────────────\n\n');
+
+    navigator.clipboard.writeText(transcriptText);
+    setIsCfoCopied(true);
+    setTimeout(() => setIsCfoCopied(false), 2500);
+  };
+
+  const handleResetChat = async () => {
+    if (cfoMessages.length > 1 && !window.confirm('هل تريد مسح سجل المحادثة وبدء جلسة جديدة؟')) {
+      return;
+    }
+    setCfoError(null);
+    setIsCfoThinking(false);
+    const defaultWelcome = createDefaultWelcomeMessage();
+    setCfoMessages([defaultWelcome]);
+
+    try {
+      const { userId, userEmail } = getActiveUserIdentifier();
+      if (!userId) return;
+      const docRef = doc(db, 'cfo_chats', userId);
+      await setDoc(docRef, {
+        userId,
+        userEmail,
+        updatedAt: serverTimestamp(),
+        messages: [{
+          id: defaultWelcome.id,
+          role: defaultWelcome.role,
+          text: defaultWelcome.text,
+          timestamp: defaultWelcome.timestamp
+        }]
+      });
+    } catch (err) {
+      console.warn('[CFO Chat] Failed to reset Firestore chat document:', err);
+    }
+  };
+
+  // --- AI Receipt Scanner & OCR Handler ---
+  const handleReceiptFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsScanningReceipt(true);
+    setReceiptScanMessage(null);
+
+    try {
+      const base64Data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result;
+          const base64Clean = typeof result === 'string' ? result.split(',')[1] : '';
+          resolve(base64Clean);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const parsed = await parseExpenseReceipt(base64Data, file.type || 'image/jpeg');
+
+      if (parsed) {
+        if (parsed.amount) setExpenseAmount(String(parsed.amount));
+
+        const lowerCat = String(parsed.category || '').toLowerCase();
+        if (lowerCat.includes('pack') || lowerCat.includes('تغليف') || lowerCat.includes('شحن') || lowerCat.includes('أكياس') || lowerCat.includes('كراتين')) {
+          setExpenseCategory('Packaging');
+        } else if (lowerCat.includes('ad') || lowerCat.includes('meta') || lowerCat.includes('facebook') || lowerCat.includes('إعلان') || lowerCat.includes('تسويق')) {
+          setExpenseCategory('Ads');
+        } else if (lowerCat.includes('fixed') || lowerCat.includes('rent') || lowerCat.includes('salary') || lowerCat.includes('إيجار') || lowerCat.includes('مرتب')) {
+          setExpenseCategory('Fixed Costs');
+        } else {
+          setExpenseCategory('Other');
+        }
+
+        const descParts = [parsed.description, parsed.supplierName].filter(Boolean);
+        if (descParts.length > 0) {
+          setExpenseDescription(descParts.join(' - '));
+        }
+
+        if (parsed.date) {
+          setExpenseDate(parsed.date);
+        }
+
+        setIsAddingExpense(true);
+        setReceiptScanMessage({
+          type: 'success',
+          text: t.receiptScanSuccess || 'تم استخراج بيانات الفاتورة بنجاح ومراجعتها في النموذج أدناه!'
+        });
+      }
+    } catch (err) {
+      console.error('Receipt OCR error:', err);
+      setReceiptScanMessage({
+        type: 'error',
+        text: t.receiptScanError || 'تعذر قراءة بيانات الفاتورة. يرجى التأكد من وضوح الصورة والمحاولة مرة أخرى.'
+      });
+    } finally {
+      setIsScanningReceipt(false);
+      if (receiptInputRef.current) receiptInputRef.current.value = '';
+    }
+  };
+
   // --- Unit Economics Calculations ---
   const unitEconomicsMetrics = useMemo(() => {
     const now = new Date();
@@ -409,17 +737,58 @@ export default function FinanceView() {
     setWithdrawalPartnerId('');
   };
 
-  // RBAC Access Guard: Hide financial breakdown and costs from Operations
-  if (userRole === 'operations') {
+  // --- Financial Intelligence & Predictive Advisory Engine Calculations ---
+  const productsContribution = useMemo(() => {
+    return calculateProductContributionMatrix(products, orders);
+  }, [products, orders]);
+
+  const cashFlow = useMemo(() => {
+    return calculateCashFlowForecast(products, orders, expenses, withdrawals, batchMetrics);
+  }, [products, orders, expenses, withdrawals, batchMetrics]);
+
+  const healthScore = useMemo(() => {
+    return calculateFinancialHealthScore({
+      batchMetrics,
+      productsContribution,
+      cashFlow,
+      unitEconomicsMetrics
+    });
+  }, [batchMetrics, productsContribution, cashFlow, unitEconomicsMetrics]);
+
+  const historicalDailyVelocity = useMemo(() => {
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    let deliveredUnits30d = 0;
+    orders.forEach(o => {
+      if (o.isDeleted) return;
+      const isDelivered = o.status === 'Delivered - Collected' || o.status === 'Delivered' || o.status === 'Delivered - Pending Cash';
+      const orderDateMs = o.createdAt?.toDate ? o.createdAt.toDate().getTime() : new Date(o.createdAt || 0).getTime();
+      if (isDelivered && orderDateMs >= thirtyDaysAgo) {
+        (o.items || []).forEach(it => {
+          deliveredUnits30d += Number(it.qty || it.quantity || 1);
+        });
+      }
+    });
+    return Math.max(1, Math.round(deliveredUnits30d / 30)) || 8;
+  }, [orders]);
+
+  // RBAC Access Guard: Strictly restricted to Admin and Super Admin (mohameedhasan81@gmail.com)
+  const isAdmin = userRole === 'admin' || isSuperAdmin(currentUser?.email);
+
+  if (!isAdmin) {
     return (
-      <div className="bg-white rounded-2xl p-8 border border-slate-100 shadow-sm text-center flex flex-col items-center justify-center min-h-[350px]">
-        <div className="p-4 rounded-full bg-amber-500/10 text-amber-600 mb-4">
-          <ShieldAlert size={40} />
+      <div className="bg-white rounded-3xl p-8 sm:p-12 border border-slate-100 shadow-sm text-center flex flex-col items-center justify-center min-h-[400px]">
+        <div className="p-4 rounded-2xl bg-amber-500/10 text-amber-600 mb-4">
+          <ShieldAlert size={44} strokeWidth={2.3} />
         </div>
-        <h3 className="text-xl font-bold text-slate-800 mb-2">{t.accessRestricted || 'Access Restricted'}</h3>
-        <p className="text-sm text-slate-500 max-w-md">
-          {t.financeOpsRestricted || 'Financial metrics and cost calculations are restricted to Admin and Finance roles.'}
+        <h3 className="text-xl font-bold text-slate-900 mb-2">
+          {t.securityAdminOnly || 'Restricted Executive Area'}
+        </h3>
+        <p className="text-sm text-slate-500 max-w-md leading-relaxed mb-4">
+          {t.securityAdminOnlyDesc || 'The Financial Intelligence & Predictive Advisory Engine is strictly accessible to Super Admin and Admin partners only.'}
         </p>
+        <div className="px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-600">
+          {t.loggedInAs}: <span className="font-bold text-slate-900">{currentUser?.email || 'Guest'}</span> ({userRole})
+        </div>
       </div>
     );
   }
@@ -455,8 +824,17 @@ export default function FinanceView() {
               </div>
             </div>
 
-            {/* Prominent Status Badge */}
-            <div className="self-start md:self-auto">
+            {/* Prominent Status Badge & AI CFO Advisor */}
+            <div className="flex items-center gap-3 flex-wrap self-start md:self-auto">
+              <button
+                type="button"
+                onClick={handleOpenCfoAdvisor}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#181E1C] via-[#293430] to-[#181E1C] hover:from-[#293430] hover:to-[#181E1C] text-white shadow-md border border-[#597867]/40 font-bold text-xs sm:text-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Bot size={17} className="text-emerald-400 shrink-0" />
+                <span>{t.aiCfoAdvisor || '✨ المستشار المالي للشركاء (AI CFO Advisor)'}</span>
+              </button>
+
               {batchMetrics.isPureProfitZone ? (
                 <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/20 font-bold text-xs sm:text-sm">
                   <span className="text-base">🚀</span>
@@ -763,32 +1141,77 @@ export default function FinanceView() {
       </motion.div>
 
       {/* Top Tabs */}
-      <div className="flex items-center gap-2 p-1.5 bg-slate-200/50 rounded-xl w-full sm:w-max flex-wrap">
+      <div className="flex items-center gap-2 p-1.5 bg-slate-200/50 rounded-2xl w-full sm:w-max flex-wrap">
         <button
-          onClick={() => setActiveTab('expenses')}
-          className={`flex-1 sm:px-5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${activeTab === 'expenses' ? 'bg-white text-[#181E1C] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          onClick={() => setActiveTab('intelligence')}
+          className={`flex-1 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+            activeTab === 'intelligence' ? 'bg-[#181E1C] text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+          }`}
         >
-          {t.expenseTracker || 'Expense Tracker'}
+          <Sparkles size={16} className={activeTab === 'intelligence' ? 'text-emerald-400' : 'text-slate-400'} />
+          <span>{t.financialIntelligenceTab || 'Financial Intelligence'}</span>
         </button>
         <button
           onClick={() => setActiveTab('unit_economics')}
-          className={`flex-1 sm:px-5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${activeTab === 'unit_economics' ? 'bg-white text-[#181E1C] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          className={`flex-1 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            activeTab === 'unit_economics' ? 'bg-white text-[#181E1C] shadow-sm' : 'text-slate-600 hover:text-slate-900'
+          }`}
         >
           {t.unitEconomics || 'Unit Economics & Marketing'}
         </button>
         <button
+          onClick={() => setActiveTab('expenses')}
+          className={`flex-1 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            activeTab === 'expenses' ? 'bg-white text-[#181E1C] shadow-sm' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          {t.expenseTracker || 'Expense Tracker'}
+        </button>
+        <button
           onClick={() => setActiveTab('reconciliation')}
-          className={`flex-1 sm:px-5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${activeTab === 'reconciliation' ? 'bg-white text-[#181E1C] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          className={`flex-1 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            activeTab === 'reconciliation' ? 'bg-white text-[#181E1C] shadow-sm' : 'text-slate-600 hover:text-slate-900'
+          }`}
         >
           {t.courierReconciliation || 'Courier Settlement'}
         </button>
         <button
           onClick={() => setActiveTab('partners')}
-          className={`flex-1 sm:px-5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${activeTab === 'partners' ? 'bg-white text-[#181E1C] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          className={`flex-1 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            activeTab === 'partners' ? 'bg-white text-[#181E1C] shadow-sm' : 'text-slate-600 hover:text-slate-900'
+          }`}
         >
           {t.partnersLedger || 'Partners Ledger'}
         </button>
       </div>
+
+      {activeTab === 'intelligence' && (
+        <div className="flex flex-col gap-6">
+          {/* 1. Executive Financial Health Score (Composite 0-100 & 3 Action Points) */}
+          <ExecutiveHealthScoreCard
+            healthScore={healthScore}
+            language={language}
+          />
+
+          {/* 2. Smart Cash Flow & Working Capital Predictor */}
+          <CashFlowPredictor
+            cashFlow={cashFlow}
+            language={language}
+          />
+
+          {/* 3. Product Contribution Matrix (Stars vs Bleeders) */}
+          <ProductContributionMatrix
+            productsContribution={productsContribution}
+            language={language}
+          />
+
+          {/* 4. Interactive Batch Reinvestment & What-If Simulator */}
+          <BatchReinvestmentSimulator
+            defaultVelocity={historicalDailyVelocity}
+            language={language}
+          />
+        </div>
+      )}
 
       {activeTab === 'expenses' && (
         <>
@@ -820,7 +1243,29 @@ export default function FinanceView() {
                   {expenses.length} records · {filteredExpenses.length} shown
                 </p>
               </div>
-              <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap sm:flex-nowrap">
+                <input
+                  type="file"
+                  ref={receiptInputRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleReceiptFileChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => receiptInputRef.current?.click()}
+                  disabled={isScanningReceipt}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 px-3.5 py-2.5 text-xs font-bold text-emerald-800 transition-colors disabled:opacity-50 shadow-sm"
+                  title="مسح فاتورة أو إيصال بالذكاء الاصطناعي"
+                >
+                  {isScanningReceipt ? (
+                    <Loader2 size={15} className="animate-spin text-emerald-600" />
+                  ) : (
+                    <Camera size={15} className="text-emerald-600" />
+                  )}
+                  <span>{isScanningReceipt ? (t.scanningReceipt || 'جاري المسح...') : (t.scanReceiptAi || '📷 مسح فاتورة بالذكاء الاصطناعي')}</span>
+                </button>
+
                 <div className="relative w-full sm:w-64">
                   <Search size={15} strokeWidth={2} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
@@ -839,6 +1284,20 @@ export default function FinanceView() {
                 </button>
               </div>
             </div>
+
+            {receiptScanMessage && (
+              <div className={`mx-6 mt-4 p-3 rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 ${
+                receiptScanMessage.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'
+              }`}>
+                <div className="flex items-center gap-2">
+                  {receiptScanMessage.type === 'success' ? <CheckCircle2 size={16} className="text-emerald-600" /> : <AlertCircle size={16} className="text-rose-600" />}
+                  <span>{receiptScanMessage.text}</span>
+                </div>
+                <button onClick={() => setReceiptScanMessage(null)} className="text-slate-400 hover:text-slate-600">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
 
             {isAddingExpense && (
               <div className="p-6 bg-slate-50 border-b border-slate-100">
@@ -1748,6 +2207,240 @@ export default function FinanceView() {
           )}
         </div>
       )}
+
+      {/* ── AI PARTNER CFO ADVISOR INTERACTIVE CHATBOT MODAL ── */}
+      <AnimatePresence>
+        {isCfoModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/65 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              className="bg-white rounded-3xl max-w-4xl w-full h-[88vh] max-h-[860px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col text-start"
+            >
+              {/* Modal Header */}
+              <div className="p-4 sm:p-5 bg-gradient-to-r from-[#181E1C] via-[#212b27] to-[#181E1C] text-white flex items-center justify-between border-b border-emerald-900/30 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 shadow-inner">
+                      <Bot size={22} />
+                    </div>
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-[#181E1C]" />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black tracking-wide flex items-center gap-2 text-white">
+                      <span>{t.aiCfoAdvisorTitle || 'المستشار المالي التفاعلي للشركاء'}</span>
+                      <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                        Interactive AI CFO
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-300 font-medium hidden sm:block mt-0.5">
+                      {t.cfoLiveDialogueDesc || 'شات استراتيجي مباشر مع الذكاء الاصطناعي متصل بالأرقام الحية للدفعة والمستودع لحظة بلحظة'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Header Action Buttons */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleResetChat}
+                    title={t.newChatOrClear || 'بدء محادثة جديدة / مسح الشات'}
+                    disabled={isCfoThinking || isCfoLoadingHistory}
+                    className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-40"
+                  >
+                    <RotateCcw size={14} className={isCfoThinking || isCfoLoadingHistory ? 'animate-spin' : ''} />
+                    <span className="hidden sm:inline">{t.newChatOrClear || 'بدء محادثة جديدة / مسح الشات'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyChatTranscript}
+                    disabled={cfoMessages.length === 0}
+                    title={t.copyChatWhatsApp || 'نسخ الشات بالكامل للواتساب'}
+                    className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-40"
+                  >
+                    {isCfoCopied ? <Check size={14} /> : <Copy size={14} />}
+                    <span className="hidden sm:inline">{isCfoCopied ? (t.chatCopied || 'تم النسخ!') : (t.copyChatWhatsApp || 'نسخ للواتساب')}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsCfoModalOpen(false)}
+                    className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-colors"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Live Metric Badges Bar */}
+              <div className="bg-slate-100/90 border-b border-slate-200/80 px-4 py-2 flex items-center justify-between overflow-x-auto text-xs font-semibold gap-3 shrink-0">
+                <div className="flex items-center gap-4 flex-nowrap">
+                  <span className="text-slate-500 flex items-center gap-1 text-[11px]">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    {t.recoveredCapital || 'استرداد رأس المال:'} <strong className="text-slate-800 font-bold">{batchMetrics.rawRecoveryPct.toFixed(1)}%</strong>
+                  </span>
+                  <span className="text-slate-500 text-[11px]">
+                    {t.netCollectedCash || 'المحصل الفعلي:'} <strong className="text-emerald-700 font-bold">{batchMetrics.netCollectedRevenue.toLocaleString('en-EG')} EGP</strong>
+                  </span>
+                  <span className="text-slate-500 text-[11px] hidden md:inline">
+                    {t.stockValueLabel || 'قيمة بضاعة المخزن:'} <strong className="text-slate-800 font-bold">{batchMetrics.remainingStockCostValue.toLocaleString('en-EG')} EGP</strong>
+                  </span>
+                  <span className="text-slate-500 text-[11px]">
+                    {t.currentBatchStatus || 'الوضع:'} <strong className={batchMetrics.isPureProfitZone ? 'text-emerald-700 font-bold' : 'text-amber-800 font-bold'}>
+                      {batchMetrics.isPureProfitZone ? (t.inPureProfit || '✨ منطقة الأرباح الصافية') : (t.recoveringCost || '⏳ جاري استرداد التكلفة')}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+
+              {/* Chat Thread Messages Stream */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-gradient-to-b from-slate-50/60 to-white text-sm" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+                {isCfoLoadingHistory ? (
+                  <div className="h-full min-h-[220px] flex flex-col items-center justify-center p-8 text-slate-500 gap-3">
+                    <Loader2 size={30} className="animate-spin text-emerald-600" />
+                    <p className="text-xs font-bold text-slate-700">{t.restoringChatHistory || 'جاري استرجاع سجل المحادثات السابقة من السحابة...'}</p>
+                  </div>
+                ) : (
+                  cfoMessages.map((msg, index) => {
+                    const isUser = msg.role === 'user';
+                    return (
+                      <motion.div
+                        key={msg.id || index}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
+                      >
+                        {/* Avatar */}
+                        <div className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center text-xs font-bold shadow-xs ${
+                          isUser 
+                            ? 'bg-[#181E1C] text-white' 
+                            : 'bg-emerald-600 text-white'
+                        }`}>
+                          {isUser ? (t.you || 'أنت') : <Bot size={16} />}
+                        </div>
+
+                        {/* Bubble */}
+                        <div className={`max-w-[85%] rounded-2xl p-4 text-xs sm:text-sm leading-relaxed ${
+                          isUser
+                            ? 'bg-[#181E1C] text-white shadow-md rounded-tr-none font-medium'
+                            : 'bg-white border border-slate-200/90 text-slate-800 shadow-xs rounded-tl-none font-medium whitespace-pre-wrap'
+                        }`}>
+                          <div className="flex items-center justify-between gap-4 mb-1 border-b pb-1 text-[10px] opacity-70"
+                               style={{ borderColor: isUser ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)' }}>
+                            <span className="font-bold">
+                              {isUser ? (t.oneOfPartners || 'أحد الشركاء') : (t.aiFinancialCfo || 'المستشار المالي (AI CFO)')}
+                            </span>
+                            <span>
+                              {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                            </span>
+                          </div>
+                          <div className="whitespace-pre-wrap">{msg.text || msg.content}</div>
+                        </div>
+                      </motion.div>
+                    );
+                  })
+                )}
+
+                {/* Thinking / Loading Indicator */}
+                {isCfoThinking && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex gap-3 items-start"
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <Bot size={16} />
+                    </div>
+                    <div className="bg-white border border-emerald-200/90 rounded-2xl rounded-tl-none p-4 shadow-xs flex items-center gap-3 text-slate-600 text-xs">
+                      <Loader2 size={16} className="animate-spin text-emerald-600 shrink-0" />
+                      <span className="font-semibold text-emerald-900">{t.cfoThinkingMessage || 'جاري قراءة الأرقام الحية وحساب الاستشارة المالية...'}</span>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Error Banner */}
+                {cfoError && (
+                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2 shadow-xs">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle size={16} className="text-amber-600 shrink-0" />
+                      <span className="font-semibold">{cfoError}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const lastUserMsg = [...cfoMessages].reverse().find(m => m.role === 'user');
+                        handleSendCfoMessage(lastUserMsg?.content || 'لخص الوضع المالي');
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 text-white font-bold text-[11px] hover:bg-amber-700 transition-colors shrink-0 shadow-xs"
+                    >
+                      {t.retryAction || 'إعادة المحاولة'}
+                    </button>
+                  </div>
+                )}
+
+                <div ref={chatMessagesEndRef} />
+              </div>
+
+              {/* Chat Input & Quick Suggestions Footer */}
+              <div className="p-3 sm:p-4 bg-white border-t border-slate-200/80 flex flex-col gap-2.5 shrink-0" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+                {/* Quick Suggestion Chips */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] font-semibold text-slate-600 scrollbar-none">
+                  <span className="text-slate-400 text-[10px] shrink-0 font-bold">{t.quickSuggestions || 'اقتراحات سريعة:'}</span>
+                  {[
+                    t.cfoChip1 || "💰 هل نقدر نسحب أرباح للشركاء حالياً؟",
+                    t.cfoChip2 || "⚡ إيه الموديلات اللي ننصح بتسييلها فوراً؟",
+                    t.cfoChip3 || "📊 حجم المبيعات المطلوب للوصول لمنطقة الربح الصافي",
+                    t.cfoChip4 || "🚀 خطة وميزانية الإنتاج والتسويق للدفعة القادمة"
+                  ].map((chip, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      disabled={isCfoThinking}
+                      onClick={() => handleSendCfoMessage(chip)}
+                      className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-200 border border-slate-200 transition-all shrink-0 whitespace-nowrap disabled:opacity-40"
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Input Bar Form */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSendCfoMessage();
+                  }}
+                  className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-1.5 focus-within:border-[#597867] focus-within:ring-2 focus-within:ring-[#597867]/10 transition-all"
+                >
+                  <input
+                    type="text"
+                    value={cfoInput}
+                    onChange={(e) => setCfoInput(e.target.value)}
+                    placeholder={t.askCfoPlaceholder || "اسأل المستشار المالي عن أي قرار يخص رأس المال، السيولة، الأرباح، أو المخزون..."}
+                    disabled={isCfoThinking}
+                    className="flex-1 bg-transparent px-3 py-2 text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 outline-none font-medium"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!cfoInput.trim() || isCfoThinking}
+                    className="px-4 py-2.5 rounded-xl bg-[#597867] hover:bg-[#465f52] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 shrink-0"
+                  >
+                    {isCfoThinking ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : (
+                      <>
+                        <Send size={14} className={language === 'ar' ? 'rotate-180' : ''} />
+                        <span className="hidden sm:inline">{t.sendAction || 'إرسال'}</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <SettlementReportModal
         isOpen={isReportOpen}

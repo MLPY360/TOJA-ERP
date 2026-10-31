@@ -19,9 +19,14 @@ import {
   ArrowLeftRight,
   Split,
   RefreshCw,
-  Printer
+  Printer,
+  User,
+  Wand2,
+  Loader2,
+  Copy
 } from 'lucide-react';
-import { useStore, normalizePhone, getAvailableStock, getProductSizes } from '../store/useStore';
+import { generateSmartWhatsApp } from '../services/aiService';
+import { useStore, normalizePhone, getAvailableStock, getProductSizes, ORDER_DISPATCHERS } from '../store/useStore';
 import { translations } from '../translations';
 import ExportOrdersModal from './ExportOrdersModal';
 import EditOrderModal from './EditOrderModal';
@@ -48,20 +53,26 @@ const formatDate = (dateValue) => {
   return new Date(dateValue).toLocaleDateString();
 };
 
+const formatOrderDate = (order) => {
+  if (order.orderDate) return order.orderDate;
+  return formatDate(order.createdAt);
+};
+
 const formatWhatsAppNumber = (phone) => {
   if (!phone) return '';
   const clean = normalizePhone(phone);
   return '20' + clean;
 };
 
-const getWhatsAppTemplates = (order, t) => {
-  const cName = order.customerName || order.customerDetails?.firstName || 'العميل';
+const getWhatsAppTemplates = (order, t, language = 'ar') => {
+  const isAr = language === 'ar';
+  const cName = order.customerName || order.customerDetails?.firstName || (isAr ? 'العميل' : 'Customer');
   const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
   const shortId = displayId.length > 10 ? displayId.substring(displayId.length - 4) : displayId;
   const cTotal = (order.totalAmount || order.total || order.totals?.total || order.totals?.grandTotal || 0).toLocaleString('en-EG');
   const itemsSummary = (order.items || []).map(i => `${i.size} x${i.qty || i.quantity || 1}`).join(', ');
 
-  return [
+  return isAr ? [
     {
       id: 'confirmation',
       title: t.confirmOrderWhatsApp,
@@ -79,6 +90,25 @@ const getWhatsAppTemplates = (order, t) => {
       title: t.followUpWhatsApp,
       statusMatch: 'Delivered',
       text: `أهلاً يا ${cName} 👋\nنتمنى تكون شحنتك من TOJA وصلت بسلام وعجبتك! ❤️\nلو المقاس محتاج استبدال أو عندك أي استفسار، إحنا معاك وتحت أمرك في أي وقت.`
+    }
+  ] : [
+    {
+      id: 'confirmation',
+      title: t.confirmOrderWhatsApp,
+      statusMatch: 'Pending',
+      text: `Hello ${cName} 👋\nThank you for ordering from TOJA! 🛍️\nOrder ID: ${shortId}\nItems: ${itemsSummary || 'Apparel Order'}\nTotal: ${cTotal} EGP\nPlease reply to confirm your address and dispatch your order!`
+    },
+    {
+      id: 'shipped',
+      title: t.dispatchOrderWhatsApp,
+      statusMatch: 'Shipped',
+      text: `Hello ${cName} 👋\nYour TOJA order has been dispatched with the courier and is on its way to you! 🚚\nOrder ID: ${shortId}\nTotal on Delivery: ${cTotal} EGP\nThe courier will contact you upon arrival.`
+    },
+    {
+      id: 'followup',
+      title: t.followUpWhatsApp,
+      statusMatch: 'Delivered',
+      text: `Hello ${cName} 👋\nWe hope your TOJA order arrived safely and fits you great! ❤️\nIf you need an exchange or have any questions, we are here to help anytime.`
     }
   ];
 };
@@ -321,7 +351,50 @@ function WhatsAppModal({ isOpen, onClose, order, language }) {
 
   const cPhone = order.phone || order.customerDetails?.phone || '';
   const formattedPhone = formatWhatsAppNumber(cPhone);
-  const templates = getWhatsAppTemplates(order, t);
+  const templates = getWhatsAppTemplates(order, t, language);
+
+  // AI Dynamic Copywriter State
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [aiCustomText, setAiCustomText] = useState('');
+  const [showAiSection, setShowAiSection] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+  const [aiIntent, setAiIntent] = useState(() => {
+    if (order.status === 'Pending') return 'confirmation';
+    if (order.status === 'Shipped') return 'shipped';
+    if (order.status === 'Delivered' || order.status === 'Delivered - Collected' || order.status === 'Delivered - Pending Cash') return 'follow_up_vip';
+    if (order.status === 'Returned' || order.status === 'Cancelled') return 're_engage_return';
+    return 'confirmation';
+  });
+
+  const handleGenerateAiMessage = async (intentToUse) => {
+    const chosenIntent = intentToUse || aiIntent;
+    setIsAiGenerating(true);
+    setShowAiSection(true);
+    try {
+      const cName = order.customerName || order.customerDetails?.firstName || 'العميل';
+      const orderSummary = {
+        orderId: order.orderId || order.customId || order.id,
+        status: order.status,
+        governorate: order.governorate,
+        items: (order.items || []).map(i => ({
+          name: i.name || i.productName || 'منتج',
+          size: i.size,
+          quantity: i.qty || i.quantity || 1,
+          price: i.unitPrice
+        })),
+        totalAmount: order.totalAmount || order.total || order.totals?.grandTotal || 0,
+        shippingFee: order.shippingFee || order.totals?.shipping || 0
+      };
+
+      const generated = await generateSmartWhatsApp(cName, orderSummary, chosenIntent);
+      setAiCustomText(generated.trim());
+    } catch (err) {
+      console.error('AI WhatsApp Generation Error:', err);
+      alert('فشل في صياغة الرسالة بالذكاء الاصطناعي، يرجى المحاولة مرة أخرى.');
+    } finally {
+      setIsAiGenerating(false);
+    }
+  };
 
   const getIsRecommended = (templateId) => {
     if (templateId === 'confirmation' && order.status === 'Pending') return true;
@@ -351,6 +424,110 @@ function WhatsAppModal({ isOpen, onClose, order, language }) {
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
             <X size={18} />
           </button>
+        </div>
+
+        {/* ── AI Dynamic WhatsApp Copywriter Card ── */}
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/5 via-emerald-900/5 to-teal-950/5 border border-emerald-500/30 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-emerald-600 text-white shadow-xs">
+                <Wand2 size={15} />
+              </div>
+              <span className="text-xs font-black text-slate-800">
+                {t.aiWhatsAppCopywriter || '✨ صياغة رسالة مخصصة بالـ AI'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleGenerateAiMessage(aiIntent)}
+              disabled={isAiGenerating}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#597867] hover:bg-[#465f52] text-white text-xs font-bold shadow-sm transition-all disabled:opacity-50"
+            >
+              {isAiGenerating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              <span>{isAiGenerating ? (t.generatingAiWhatsApp || 'جاري الصياغة...') : (t.generateAiWhatsApp || 'صياغة بالـ AI')}</span>
+            </button>
+          </div>
+
+          {/* Intent Selector Buttons */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {[
+              { id: 'confirmation', label: language === 'ar' ? 'تأكيد الطلب' : 'Confirm Order' },
+              { id: 'shipped', label: language === 'ar' ? 'تم الشحن' : 'Shipped' },
+              { id: 'follow_up_vip', label: language === 'ar' ? 'متابعة ورأي العميل' : 'Follow-up' },
+              { id: 're_engage_return', label: language === 'ar' ? 'استعادة العميل / حل المشكلة' : 'Win-Back / Support' }
+            ].map(item => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  setAiIntent(item.id);
+                  handleGenerateAiMessage(item.id);
+                }}
+                disabled={isAiGenerating}
+                className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all ${
+                  aiIntent === item.id
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Generated Text Area & Controls */}
+          {(showAiSection || aiCustomText) && (
+            <div className="flex flex-col gap-2 pt-2 border-t border-emerald-500/20">
+              {isAiGenerating ? (
+                <div className="py-6 flex flex-col items-center justify-center gap-2 text-center text-slate-500">
+                  <Loader2 size={24} className="animate-spin text-emerald-600" />
+                  <span className="text-xs font-medium">{t.craftingAiMessage || 'جاري صياغة رسالة ودودة وجذابة عبر الذكاء الاصطناعي...'}</span>
+                </div>
+              ) : (
+                <>
+                  <textarea
+                    rows={4}
+                    value={aiCustomText}
+                    onChange={(e) => setAiCustomText(e.target.value)}
+                    placeholder={t.aiMessagePlaceholder || 'سيظهر نص الرسالة المولدة هنا للتعديل أو الإرسال المباشر...'}
+                    className="w-full bg-white border border-emerald-300 rounded-xl p-3 text-xs text-slate-800 font-medium leading-relaxed outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    dir={language === 'ar' ? 'rtl' : 'ltr'}
+                  />
+                  <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!aiCustomText) return;
+                        navigator.clipboard.writeText(aiCustomText);
+                        setIsCopied(true);
+                        setTimeout(() => setIsCopied(false), 2000);
+                      }}
+                      disabled={!aiCustomText}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors disabled:opacity-40"
+                    >
+                      {isCopied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                      <span>{isCopied ? (t.textCopied || 'تم النسخ!') : (t.copyText || 'نسخ النص')}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!aiCustomText) return;
+                        const encoded = encodeURIComponent(aiCustomText);
+                        window.open(`https://wa.me/${formattedPhone}?text=${encoded}`, '_blank');
+                        onClose();
+                      }}
+                      disabled={!aiCustomText}
+                      className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm transition-all disabled:opacity-40"
+                    >
+                      <MessageCircle size={14} />
+                      <span>{t.sendSmartMessageNow || 'إرسال الرسالة الذكية الآن'}</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t.selectTemplate}</p>
@@ -818,6 +995,7 @@ export default function OrdersView() {
   const [blacklistCustomerModal, setBlacklistCustomerModal] = useState(null);
   const [exchangeOrder, setExchangeOrder] = useState(null);
   const [partialDeliveryOrder, setPartialDeliveryOrder] = useState(null);
+  const [selectedDispatcher, setSelectedDispatcher] = useState('ALL');
   const [thermalLabelOrder, setThermalLabelOrder] = useState(null);
 
   const toggleNotes = (orderId) => {
@@ -862,13 +1040,19 @@ export default function OrdersView() {
   const currentList = viewMode === 'active' ? orders : (deletedOrders || []);
 
   const filtered = currentList.filter((o) => {
+    if (selectedDispatcher !== 'ALL') {
+      if ((o.dispatchedBy || '') !== selectedDispatcher) return false;
+    }
+
     const q = searchQuery.toLowerCase();
     const displayId = o.orderId || o.orderNumber || o.customId || o.order_id || o.displayId || o.id;
     const cName = o.customerName || (o.customerDetails ? `${o.customerDetails.firstName} ${o.customerDetails.lastName}` : '');
     const cPhone = o.phone || o.customerDetails?.phone || '';
+    const disp = (o.dispatchedBy || '').toLowerCase();
     return displayId.toLowerCase().includes(q) ||
       cName.toLowerCase().includes(q) ||
-      cPhone.includes(q);
+      cPhone.includes(q) ||
+      disp.includes(q);
   });
 
   return (
@@ -918,7 +1102,21 @@ export default function OrdersView() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+          {/* Dispatcher Filter Dropdown */}
+          <div className="relative min-w-[130px] sm:min-w-[160px] flex-1 sm:flex-initial">
+            <select
+              value={selectedDispatcher}
+              onChange={(e) => setSelectedDispatcher(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 px-3 text-[12px] font-bold text-slate-700 outline-none transition-all focus:border-[#597867] focus:bg-white focus:ring-2 focus:ring-[#597867]/10 cursor-pointer text-start"
+            >
+              <option value="ALL">{t.allDispatchers}</option>
+              {ORDER_DISPATCHERS.map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="relative flex-1 sm:w-64">
             <Search size={15} strokeWidth={2} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -1000,7 +1198,15 @@ export default function OrdersView() {
                         <Split size={10} /> {t.partialDelivery}
                       </span>
                     )}
-                    <p className="text-[10px] text-slate-400 font-medium w-full">{formatDate(order.createdAt)}</p>
+                    <div className="flex items-center gap-2 flex-wrap w-full mt-0.5">
+                      <p className="text-[11px] text-slate-500 font-medium">{formatOrderDate(order)}</p>
+                      {order.dispatchedBy && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#597867]/10 text-[#597867] border border-[#597867]/20" title={`${t.dispatchedBy}: ${order.dispatchedBy}`}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#597867]"></span>
+                          {order.dispatchedBy}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {viewMode === 'trash' ? (
@@ -1151,6 +1357,8 @@ export default function OrdersView() {
                   <div className="text-[10px] text-slate-400 font-medium text-start">
                     {viewMode === 'trash' ? (
                       <span>{t.deletedBy}: {order.deletedBy || 'Admin'}</span>
+                    ) : order.dispatchedBy ? (
+                      <span>{t.dispatchedBy}: <strong className="text-slate-700 font-bold">{order.dispatchedBy}</strong></span>
                     ) : (
                       <span>{order.createdBy ? `By: ${order.createdBy}` : 'Website'}</span>
                     )}
@@ -1274,7 +1482,7 @@ export default function OrdersView() {
               <th className="p-4 font-semibold text-start">{t.totalValue}</th>
               <th className="p-4 font-semibold text-center">{t.status}</th>
               <th className="p-4 font-semibold px-6 text-end">
-                {viewMode === 'trash' ? t.actions : t.createdBy}
+                {viewMode === 'trash' ? t.actions : t.dispatchedBy}
               </th>
             </tr>
           </thead>
@@ -1330,7 +1538,7 @@ export default function OrdersView() {
                             </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{formatDate(order.createdAt)}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5 font-medium">{formatOrderDate(order)}</p>
                       </td>
 
                       <td className="p-4 align-middle text-start">
@@ -1470,7 +1678,14 @@ export default function OrdersView() {
                           </div>
                         ) : (
                           <div className="flex items-center justify-end gap-1.5">
-                            <span className="text-xs font-semibold text-slate-500 hidden lg:inline mr-1">{order.createdBy || 'Website'}</span>
+                            {order.dispatchedBy ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-[#597867]/10 text-[#597867] border border-[#597867]/20 shadow-xs mr-1" title={`${t.dispatchedBy}: ${order.dispatchedBy}`}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#597867]"></span>
+                                {order.dispatchedBy}
+                              </span>
+                            ) : (
+                              <span className="text-xs font-semibold text-slate-500 hidden lg:inline mr-1">{order.createdBy || 'Website'}</span>
+                            )}
 
                             {/* Create Exchange Button */}
                             <button

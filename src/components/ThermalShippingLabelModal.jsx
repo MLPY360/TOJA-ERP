@@ -20,6 +20,7 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
   const totalPieces = items.reduce((sum, item) => sum + (Number(item.qty || item.quantity) || 1), 0);
   const carrier = order.courierDetails?.carrierName || order.courierReconciliation?.carrierName || 'Bosta Express';
   const trackingNumber = order.courierDetails?.trackingNumber || order.trackingNumber || displayId;
+  const printedDate = order.orderDate || (order.createdAt ? (typeof order.createdAt === 'string' ? order.createdAt.slice(0, 10) : new Date(order.createdAt).toISOString().slice(0, 10)) : new Date().toISOString().slice(0, 10));
 
   // Visual Barcode generator
   const renderBarcodeBars = () => {
@@ -123,7 +124,7 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
               <div className="my-2 border-b-2 border-black pb-2 text-center">
                 <div className="flex items-center justify-between px-1 text-[10px] font-extrabold uppercase">
                   <span>Carrier: {carrier}</span>
-                  <span className="font-mono">{new Date(order.createdAt || Date.now()).toISOString().slice(0, 10)}</span>
+                  <span className="font-mono">{printedDate}</span>
                 </div>
 
                 {renderBarcodeBars()}
@@ -132,6 +133,11 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
                   <span>*{displayId}*</span>
                   <span>TRK: {trackingNumber}</span>
                 </div>
+                {order.dispatchedBy && (
+                  <div className="mt-1 text-[9px] font-mono font-bold uppercase text-slate-700">
+                    {t.dispatchedBy || 'Dispatched by'}: {order.dispatchedBy}
+                  </div>
+                )}
               </div>
 
               {/* Consignee / Recipient Block */}
@@ -213,6 +219,11 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
 
               {/* Customer Notice Footer */}
               <div className="mt-2 text-center text-[9px] font-extrabold text-slate-700 leading-tight">
+                {order.dispatchedBy && (
+                  <p className="font-mono font-black text-black uppercase mb-0.5">
+                    {t.dispatchedBy || 'Dispatched by'}: {order.dispatchedBy}
+                  </p>
+                )}
                 <p>{t.inspectionAllowed}</p>
                 <p className="mt-0.5 text-[8px] font-mono text-slate-400 uppercase">Printed via TOJA ERP System</p>
               </div>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Download, ClipboardList, LogOut, Package, BarChart3, LayoutDashboard, Menu, Globe, Wallet, ShieldAlert, Users } from 'lucide-react';
+import { Plus, Download, ClipboardList, LogOut, Package, BarChart3, LayoutDashboard, Menu, Globe, Wallet, ShieldAlert, Users, CheckSquare } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useStore, calculateBatchCapitalMetrics, getAvailableStock, getProductSizes, isSuperAdmin } from './store/useStore';
 import { translations } from './translations';
@@ -16,6 +16,8 @@ import OrdersView from './components/OrdersView';
 import AddOrderModal from './components/AddOrderModal';
 import FinanceView from './components/FinanceView';
 import CustomersView from './components/CustomersView';
+import TasksView from './components/TasksView';
+import StorefrontManager from './components/StorefrontManager';
 
 function formatEGP(amount) {
   const safeAmount = Number(amount) || 0;
@@ -25,7 +27,7 @@ function formatEGP(amount) {
 const getSum = (obj) => Object.values(obj || {}).reduce((a, b) => a + b, 0);
 
 export default function App() {
-  const { currentUser, logout, products, orders, expenses, language, toggleLanguage, userRole, setUserRole } = useStore();
+  const { currentUser, logout, products, orders, expenses, partnerTasks, exchangeRequests, waitlist, language, toggleLanguage, userRole, setUserRole } = useStore();
   const t = translations[language];
 
   useEffect(() => {
@@ -218,7 +220,7 @@ export default function App() {
             <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setIsMobileMenuOpen(false)} />
           )}
 
-          <aside className={`fixed inset-y-0 left-0 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition-transform duration-300 ease-in-out bg-[#181E1C] w-64 text-white flex-shrink-0 flex flex-col justify-between z-50`}>
+          <aside className={`fixed inset-y-0 start-0 transform ${isMobileMenuOpen ? 'translate-x-0' : (language === 'ar' ? 'translate-x-full' : '-translate-x-full')} md:relative md:translate-x-0 transition-transform duration-300 ease-in-out bg-[#181E1C] w-64 text-white flex-shrink-0 flex flex-col justify-between z-50`}>
             <div>
               <div className="flex items-center gap-3.5 px-6 py-8">
                 <img src="/logo.png" alt="TOJA" className="h-8 w-auto object-contain invert brightness-0" />
@@ -258,6 +260,32 @@ export default function App() {
                     <Wallet size={18} strokeWidth={2} /> {t.finance || 'Finance'}
                   </div>
                 )}
+                <div
+                  onClick={() => { setActiveTab('tasks'); setIsMobileMenuOpen(false); }}
+                  className={`px-4 py-3 rounded-xl flex items-center justify-between text-sm font-semibold cursor-pointer transition-colors ${activeTab === 'tasks' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <CheckSquare size={18} strokeWidth={2} /> {t.partnerTasks || 'Partner Tasks'}
+                  </div>
+                  {partnerTasks && partnerTasks.filter(task => task.status !== 'completed').length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      {partnerTasks.filter(task => task.status !== 'completed').length}
+                    </span>
+                  )}
+                </div>
+                <div
+                  onClick={() => { setActiveTab('storefront'); setIsMobileMenuOpen(false); }}
+                  className={`px-4 py-3 rounded-xl flex items-center justify-between text-sm font-semibold cursor-pointer transition-colors ${activeTab === 'storefront' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Globe size={18} strokeWidth={2} /> {t.storefront || 'Storefront Control'}
+                  </div>
+                  {exchangeRequests && exchangeRequests.filter(req => (req.status || 'pending') === 'pending').length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">
+                      {exchangeRequests.filter(req => (req.status || 'pending') === 'pending').length}
+                    </span>
+                  )}
+                </div>
               </nav>
             </div>
 
@@ -315,10 +343,10 @@ export default function App() {
                   </button>
                   <div>
                     <h1 className="text-3xl font-extrabold text-[#181E1C] tracking-tight">
-                      {activeTab === 'dashboard' ? t.dashboard : activeTab === 'orders' ? t.orders : activeTab === 'customers' ? (t.customers || 'Customers') : (t.finance || 'Finance')}
+                      {activeTab === 'dashboard' ? t.dashboard : activeTab === 'orders' ? t.orders : activeTab === 'customers' ? (t.customers || 'Customers') : activeTab === 'tasks' ? (t.partnerTasks || 'Partner Tasks') : activeTab === 'storefront' ? (t.storefront || 'Storefront Control') : (t.finance || 'Finance')}
                     </h1>
                     <p className="text-sm text-slate-500 mt-1 font-medium">
-                      {activeTab === 'dashboard' ? t.overview : activeTab === 'orders' ? t.manageOrders : activeTab === 'customers' ? (t.customerCRM || 'Customer 360 & CRM') : (t.expenseTracker || 'Expense Tracker')}
+                      {activeTab === 'dashboard' ? t.overview : activeTab === 'orders' ? t.manageOrders : activeTab === 'customers' ? (t.customerCRM || 'Customer 360 & CRM') : activeTab === 'tasks' ? (t.partnerTasksDesc || 'Partner Operations & Accountability') : activeTab === 'storefront' ? (t.storefrontDesc || 'Manage waitlists, size exchanges, promo codes, and live store settings') : (t.expenseTracker || 'Expense Tracker')}
                     </p>
                   </div>
                 </div>
@@ -326,9 +354,16 @@ export default function App() {
                 <div className="flex items-center gap-3 flex-wrap justify-end">
                   <button
                     onClick={toggleLanguage}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-sm font-semibold shadow-sm transition-all"
+                    title={language === 'ar' ? 'Switch to English' : 'التحويل إلى اللغة العربية'}
+                    className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs sm:text-sm font-bold shadow-xs hover:shadow-sm transition-all cursor-pointer"
                   >
-                    <Globe size={16} /> <span className="hidden sm:inline">{t.langToggle}</span>
+                    <Globe size={16} className="text-[#597867]" />
+                    <span className="font-bold">
+                      {language === 'ar' ? 'العربية' : 'English'}
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-semibold border-s border-slate-200 ps-2">
+                      {language === 'ar' ? 'EN' : 'عربي'}
+                    </span>
                   </button>
 
                   <button
@@ -352,14 +387,14 @@ export default function App() {
                     >
                       <Plus size={16} strokeWidth={2.5} /> <span className="hidden sm:inline">{t.addProduct}</span>
                     </button>
-                  ) : (
+                  ) : activeTab === 'orders' ? (
                     <button
                       onClick={() => setOrderModalOpen(true)}
                       className="flex items-center justify-center gap-2 rounded-xl bg-[#597867] px-5 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-[#465f52]"
                     >
                       <Plus size={16} strokeWidth={2.5} /> <span className="hidden sm:inline">{t.addOrder}</span>
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
@@ -409,6 +444,10 @@ export default function App() {
                 <OrdersView />
               ) : activeTab === 'customers' ? (
                 <CustomersView />
+              ) : activeTab === 'tasks' ? (
+                <TasksView />
+              ) : activeTab === 'storefront' ? (
+                <StorefrontManager />
               ) : (
                 <FinanceView />
               )}
