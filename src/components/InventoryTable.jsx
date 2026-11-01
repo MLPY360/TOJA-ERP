@@ -572,7 +572,14 @@ export default function InventoryTable({ onEdit }) {
                           </div>
                         )}
                         <div>
-                          <p className="font-bold text-[#181E1C] truncate max-w-[150px] lg:max-w-[250px]" title={product.name}>{product.name}</p>
+                          <p className="font-bold text-[#181E1C] truncate max-w-[150px] lg:max-w-[250px]" title={product.name}>
+                            {language === 'ar' && product.nameAr ? product.nameAr : product.name}
+                          </p>
+                          {product.nameAr && language !== 'ar' && (
+                            <p className="text-[11px] text-slate-400 truncate max-w-[150px] lg:max-w-[250px]">
+                              {product.nameAr}
+                            </p>
+                          )}
                           <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide truncate max-w-[150px]" title={product.sku}>{product.sku}</p>
                         </div>
                       </div>
@@ -765,7 +772,14 @@ export default function InventoryTable({ onEdit }) {
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-bold text-[#181E1C] text-sm truncate">{product.name}</h3>
+                      <h3 className="font-bold text-[#181E1C] text-sm truncate">
+                        {language === 'ar' && product.nameAr ? product.nameAr : product.name}
+                      </h3>
+                      {product.nameAr && language !== 'ar' && (
+                        <p className="text-[11px] text-slate-400 truncate">
+                          {product.nameAr}
+                        </p>
+                      )}
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 truncate">{product.sku}</p>
                     </div>
                   </div>

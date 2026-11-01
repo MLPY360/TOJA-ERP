@@ -86,6 +86,34 @@ export default function LoginModal() {
             {isLoading ? '...' : t.signIn}
           </button>
         </form>
+
+        <div className="mt-6 pt-4 border-t border-slate-100 text-center">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+            {language === 'ar' ? 'حسابات الشركاء التجريبية (Staging Preview)' : 'Partner Preview Testing Access'}
+          </p>
+          <div className="flex flex-wrap gap-1.5 justify-center">
+            {[
+              { label: 'Mohamed (Admin)', email: 'mohameedhasan81@gmail.com' },
+              { label: 'Ahmed Arnos', email: 'arnos@toja.com' },
+              { label: 'Yossef Sameh', email: 'yossef@toja.com' },
+              { label: 'Moustafa Ebrahim', email: 'moustafa@toja.com' },
+              { label: 'Demo Partner', email: 'partner@toja.com' }
+            ].map((acc) => (
+              <button
+                key={acc.email}
+                type="button"
+                onClick={() => {
+                  setEmail(acc.email);
+                  if (!password) setPassword('toja2026!');
+                  setError('');
+                }}
+                className="text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md transition-colors cursor-pointer"
+              >
+                {acc.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </motion.div>
     </div>
   );

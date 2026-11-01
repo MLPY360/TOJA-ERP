@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Download, ClipboardList, LogOut, Package, BarChart3, LayoutDashboard, Menu, Globe, Wallet, ShieldAlert, Users, CheckSquare } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { useStore, calculateBatchCapitalMetrics, getAvailableStock, getProductSizes, isSuperAdmin } from './store/useStore';
+import { useStore, calculateBatchCapitalMetrics, getAvailableStock, getProductSizes, isSuperAdmin, isPartnerStaff } from './store/useStore';
 import { translations } from './translations';
 import LoginModal from './components/LoginModal';
 import ActivityLogs from './components/ActivityLogs';
@@ -27,7 +27,7 @@ function formatEGP(amount) {
 const getSum = (obj) => Object.values(obj || {}).reduce((a, b) => a + b, 0);
 
 export default function App() {
-  const { currentUser, logout, products, orders, expenses, partnerTasks, exchangeRequests, waitlist, language, toggleLanguage, userRole, setUserRole } = useStore();
+  const { currentUser, logout, authLoading, products, orders, expenses, partnerTasks, exchangeRequests, waitlist, language, toggleLanguage, userRole, setUserRole } = useStore();
   const t = translations[language];
 
   useEffect(() => {
@@ -48,9 +48,9 @@ export default function App() {
     }
   }, [userRole, activeTab]);
 
-  // Security Lockdown: Strict check ensuring non-super-admins are locked to non-admin roles
+  // Security Lockdown: Strict check ensuring non-authorized users cannot hold admin role
   useEffect(() => {
-    if (currentUser && !isSuperAdmin(currentUser.email) && userRole === 'admin') {
+    if (currentUser && !isSuperAdmin(currentUser.email) && !isPartnerStaff(currentUser.email) && userRole === 'admin') {
       useStore.setState({ userRole: 'operations' });
       try {
         localStorage.setItem('toja_user_role', 'operations');
@@ -191,6 +191,55 @@ export default function App() {
     XLSX.writeFile(workbook, `TOJA_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  // 1. Loading screen while auth state is resolving
+  if (authLoading) {
+    return (
+      <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white">
+        <div className="w-10 h-10 border-2 border-slate-700 border-t-emerald-400 rounded-full animate-spin mb-4" />
+        <span className="text-xs uppercase font-mono tracking-widest text-slate-400">
+          {language === 'ar' ? 'جاري التحقق من الصلاحيات...' : 'AUTHENTICATING SECURE ERP...'}
+        </span>
+      </div>
+    );
+  }
+
+  // 2. Unauthenticated Guard: Display Login Modal
+  if (!currentUser) {
+    return <LoginModal />;
+  }
+
+  // 3. Customer Role Guard: Regular storefront customer accounts are strictly barred from ERP
+  const isAuthorizedStaff = isSuperAdmin(currentUser.email) || isPartnerStaff(currentUser.email) || userRole === 'admin' || userRole === 'operations' || (currentUser.role && currentUser.role !== 'customer');
+
+  if (!isAuthorizedStaff) {
+    return (
+      <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 space-y-4 shadow-2xl">
+          <div className="w-14 h-14 bg-red-500/10 text-red-400 rounded-2xl flex items-center justify-center mx-auto border border-red-500/20">
+            <ShieldAlert size={28} />
+          </div>
+          <h2 className="text-lg font-black text-white">
+            {language === 'ar' ? 'غير مصرح بالوصول لنظام العمليات' : 'Restricted Staff Area'}
+          </h2>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            {language === 'ar'
+              ? 'هذه البوابة مخصصة حصرياً لفريق العمليات والإدارة في TOJA. حساب العميل الحالي غير مصرح له باستعراض أو تعديل بيانات النظام.'
+              : 'This portal is restricted to authorized TOJA operations and administrative staff. Customer accounts cannot access ERP intelligence or mutate records.'}
+          </p>
+          <div className="text-[11px] font-mono text-slate-400 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
+            {language === 'ar' ? 'مسجل كـ:' : 'Signed in as:'} {currentUser.email} ({currentUser.role || 'customer'})
+          </div>
+          <button
+            onClick={logout}
+            className="w-full py-3 bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md"
+          >
+            {language === 'ar' ? 'تسجيل الخروج والتبديل لحساب إداري' : 'Sign Out & Switch Account'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="flex h-screen w-full relative overflow-hidden bg-slate-50">
@@ -305,12 +354,14 @@ export default function App() {
                 </span>
               </div>
 
-              {/* Testing Role Switcher: Strictly Restricted to Super Admin whitelist */}
-              {isSuperAdmin(currentUser?.email) && (
+              {/* Testing Role Switcher: Super Admin & Partner Staging Access */}
+              {(isSuperAdmin(currentUser?.email) || isPartnerStaff(currentUser?.email)) && (
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-[10px] uppercase font-bold text-white/40">{t.switchRole}</label>
-                    <span className="text-[9px] font-bold text-purple-400 bg-purple-500/20 px-1.5 py-0.2 rounded border border-purple-500/30">Super Admin</span>
+                    <span className="text-[9px] font-bold text-purple-400 bg-purple-500/20 px-1.5 py-0.2 rounded border border-purple-500/30">
+                      {isSuperAdmin(currentUser?.email) ? 'Super Admin' : 'Partner Preview'}
+                    </span>
                   </div>
                   <select
                     value={userRole}

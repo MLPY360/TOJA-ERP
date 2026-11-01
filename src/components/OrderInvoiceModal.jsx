@@ -1,8 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Printer, Tag, Phone, MapPin, Calendar, User, Package } from 'lucide-react';
+import { X, Printer, Tag, Phone, MapPin, Calendar, User, Package, ShieldCheck, Banknote, Smartphone } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
+import { isOrderPaidOnline, getOrderPaymentInfo } from '../utils/paymentUtils';
 
 export default function OrderInvoiceModal({ isOpen, onClose, order }) {
   const { products, language } = useStore();
@@ -92,10 +93,21 @@ export default function OrderInvoiceModal({ isOpen, onClose, order }) {
                     <span>{t.dispatchedBy || 'Dispatched by'}: <strong className="text-[#597867]">{order.dispatchedBy}</strong></span>
                   </p>
                 )}
-                <div className="mt-1">
+                <div className="mt-1 flex items-center gap-1.5 flex-wrap sm:justify-end">
                   <span className="inline-block text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
                     {order.status}
                   </span>
+                  {isOrderPaidOnline(order) ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      <ShieldCheck size={11} className="text-emerald-700" />
+                      <span>{language === 'ar' ? 'مدفوع مسبقاً (فيزا)' : 'PAID ONLINE'}</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                      <Banknote size={11} className="text-amber-700" />
+                      <span>{language === 'ar' ? 'الدفع عند الاستلام' : 'COD'}</span>
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -146,7 +158,9 @@ export default function OrderInvoiceModal({ isOpen, onClose, order }) {
                       return (
                         <tr key={idx} className="hover:bg-slate-50/50">
                           <td className="p-3 font-bold text-[#181E1C] text-start">
-                            {product.name || 'Product'}
+                            {language === 'ar'
+                              ? (product.nameAr || item.nameAr || item.productNameAr || product.name || item.name || 'Product')
+                              : (product.name || item.name || 'Product')}
                             {product.sku && (
                               <span className="block text-[10px] text-slate-400 font-medium font-mono">{product.sku}</span>
                             )}
@@ -190,6 +204,22 @@ export default function OrderInvoiceModal({ isOpen, onClose, order }) {
               <div className="flex justify-between items-center pt-2.5 border-t border-slate-200 mt-0.5">
                 <span className="font-extrabold text-sm text-[#181E1C]">{t.finalTotal}</span>
                 <span className="text-base font-black text-[#597867]">{cTotal.toLocaleString('en-EG')} EGP</span>
+              </div>
+
+              {/* Amount Due on Delivery / COD vs Online */}
+              <div className="flex justify-between items-center pt-2 border-t border-dashed border-slate-200 text-xs">
+                <span className="font-bold text-slate-700">
+                  {language === 'ar' ? 'المبلغ المطلوب تحصيله من العميل:' : 'Amount to Collect on Delivery:'}
+                </span>
+                {isOrderPaidOnline(order) ? (
+                  <span className="font-black text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                    {language === 'ar' ? '0 ج.م (مدفوع مسبقاً بالكامل)' : '0 EGP (Prepaid Online)'}
+                  </span>
+                ) : (
+                  <span className="font-black text-xs text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                    {cTotal.toLocaleString('en-EG')} EGP ({language === 'ar' ? 'نقداً للمندوب' : 'Cash'})
+                  </span>
+                )}
               </div>
             </div>
 

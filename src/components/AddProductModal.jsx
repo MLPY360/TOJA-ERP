@@ -14,6 +14,7 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
 
   const [form, setForm] = useState({
     name: '',
+    nameAr: '',
     sku: '',
     imageUrl: '',
     costPrice: '',
@@ -27,6 +28,7 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
     if (editProduct) {
       setForm({
         name: editProduct.name || '',
+        nameAr: editProduct.nameAr || '',
         sku: editProduct.sku || '',
         imageUrl: editProduct.imageUrl || '',
         costPrice: String(editProduct.costPrice || ''),
@@ -46,7 +48,7 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
         setSizes({ M: 0, L: 0, XL: 0, XXL: 0 });
       }
     } else {
-      setForm({ name: '', sku: '', imageUrl: '', costPrice: '', sellingPrice: '' });
+      setForm({ name: '', nameAr: '', sku: '', imageUrl: '', costPrice: '', sellingPrice: '' });
       setSizes({ M: 0, L: 0, XL: 0, XXL: 0 });
     }
   }, [editProduct, isOpen]);
@@ -105,6 +107,7 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
 
     const data = {
       name: form.name.trim(),
+      nameAr: form.nameAr.trim() || form.name.trim(),
       sku: form.sku.trim(),
       imageUrl: form.imageUrl,
       initialStock,
@@ -138,15 +141,26 @@ export default function AddProductModal({ isOpen, onClose, editProduct }) {
         {/* Body (Form Layout) */}
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="p-6 grid grid-cols-2 gap-5 overflow-y-auto">
-            <div className="col-span-2 flex flex-col gap-1.5">
-              <label className="text-sm font-semibold text-slate-700">Product Name</label>
+            <div className="col-span-2 sm:col-span-1 flex flex-col gap-1.5">
+              <label className="text-sm font-semibold text-slate-700">Product Name (EN)</label>
               <input
                 type="text"
                 required
                 value={form.name}
                 onChange={handleChange('name')}
-                placeholder="e.g. TOJA Slim Fit Polo"
+                placeholder="e.g. White Basic T-Shirt"
                 className="h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:ring-2 focus:ring-[#597867]/20 focus:border-[#597867] transition-all outline-none"
+              />
+            </div>
+
+            <div className="col-span-2 sm:col-span-1 flex flex-col gap-1.5" dir="rtl">
+              <label className="text-sm font-semibold text-slate-700 text-right">الاسم بالعربي / Arabic Name</label>
+              <input
+                type="text"
+                value={form.nameAr}
+                onChange={handleChange('nameAr')}
+                placeholder="مثال: تيشيرت بيزك أبيض"
+                className="h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:ring-2 focus:ring-[#597867]/20 focus:border-[#597867] transition-all outline-none text-right font-medium"
               />
             </div>
             

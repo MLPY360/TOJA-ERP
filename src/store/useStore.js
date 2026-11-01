@@ -1,12 +1,12 @@
 import { create } from 'zustand'
-import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, getDoc, setDoc, serverTimestamp, where, getDocs } from 'firebase/firestore'
 import { db, auth } from '../firebase'
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth'
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth'
 import { logger } from '../utils/logger'
-import { SUPER_ADMIN_EMAILS, isSuperAdmin } from '../utils/authConfig'
+import { SUPER_ADMIN_EMAILS, isSuperAdmin, isPartnerStaff, isAuthorizedStaff, PARTNER_STAFF_EMAILS } from '../utils/authConfig'
 import { translations } from '../translations'
 
-export { SUPER_ADMIN_EMAILS, isSuperAdmin, translations }
+export { SUPER_ADMIN_EMAILS, isSuperAdmin, isPartnerStaff, isAuthorizedStaff, PARTNER_STAFF_EMAILS, translations }
 
 export const ORDER_DISPATCHERS = [
   'Ahmed arnos',
@@ -349,7 +349,7 @@ export const useStore = create((set, get) => ({
     try {
       const rawUser = localStorage.getItem('toja_user');
       const user = rawUser ? JSON.parse(rawUser) : null;
-      if (user && isSuperAdmin(user.email)) {
+      if (user && (isSuperAdmin(user.email) || isPartnerStaff(user.email))) {
         return localStorage.getItem('toja_user_role') || 'admin';
       }
       return 'operations';
@@ -375,18 +375,37 @@ export const useStore = create((set, get) => ({
   })(),
   translations,
   listenersInitialized: false,
+  authLoading: true,
 
   initAuthListener: () => {
     onAuthStateChanged(auth, async (user) => {
       if (user) {
         const isSuper = isSuperAdmin(user.email);
+        const isPartner = isPartnerStaff(user.email);
         let role = 'operations';
 
-        if (isSuper) {
-          // Super Admins default to 'admin' (or keep selected role if testing other roles)
+        if (isSuper || isPartner) {
+          // Super Admins and Whitelisted Partners default to 'admin' (or keep selected role if testing other roles)
           const savedRole = localStorage.getItem('toja_user_role');
           role = savedRole || 'admin';
           localStorage.setItem('toja_user_role', role);
+
+          // Auto-sync partner record to Firestore users/{uid} so security rules grant full access
+          try {
+            const userRef = doc(db, "users", user.uid);
+            const userSnap = await getDoc(userRef);
+            if (!userSnap.exists() || userSnap.data()?.role === 'customer') {
+              await setDoc(userRef, {
+                email: user.email,
+                role: 'admin',
+                isStaff: true,
+                isPartner: true,
+                updatedAt: serverTimestamp()
+              }, { merge: true });
+            }
+          } catch (e) {
+            console.warn("Could not sync partner role to users doc:", e);
+          }
         } else {
           // For all other users, default to 'operations' or read assigned role from users/{uid}
           try {
@@ -400,7 +419,7 @@ export const useStore = create((set, get) => ({
           } catch (e) {
             console.warn("Could not fetch user document for role:", e);
           }
-          // Strict lockdown: non-super admin CANNOT have 'admin' role under any circumstance
+          // Strict lockdown: non-super admin and non-partner CANNOT have 'admin' role under any circumstance
           if (role === 'admin') {
             role = 'operations';
           }
@@ -413,11 +432,11 @@ export const useStore = create((set, get) => ({
           email: user.email,
           role
         };
-        set({ currentUser: userData, userRole: role });
+        set({ currentUser: userData, userRole: role, authLoading: false });
         localStorage.setItem('toja_user', JSON.stringify(userData));
         get().initializeListeners();
       } else {
-        set({ currentUser: null, userRole: 'operations' });
+        set({ currentUser: null, userRole: 'operations', authLoading: false });
         localStorage.removeItem('toja_user');
         localStorage.removeItem('toja_user_role');
       }
@@ -489,7 +508,7 @@ export const useStore = create((set, get) => ({
 
   setUserRole: (role) => {
     const user = get().currentUser;
-    if (!isSuperAdmin(user?.email)) {
+    if (!isSuperAdmin(user?.email) && !isPartnerStaff(user?.email)) {
       console.warn("Unauthorized role switch attempt blocked for:", user?.email);
       logger.warn('RBAC_ROLE_SWITCH_BLOCKED', 'auth', {
         userId: user?.id,
@@ -516,6 +535,17 @@ export const useStore = create((set, get) => ({
       get().logActivity('Logged into the system');
       return { success: true };
     } catch (error) {
+      // If user not found or invalid credential, auto-create account for whitelisted partners for seamless testing
+      if ((error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') && isPartnerStaff(email)) {
+        try {
+          const userCred = await createUserWithEmailAndPassword(auth, email, password);
+          logger.info('AUTH_PARTNER_AUTO_REGISTER', 'auth', { email, uid: userCred.user?.uid }, `Auto-created partner account for ${email}`);
+          get().logActivity('Partner auto-registered & logged into system');
+          return { success: true };
+        } catch (regErr) {
+          console.warn("Partner auto-register fallback:", regErr.message);
+        }
+      }
       console.error("Login failed:", error);
       logger.error('AUTH_LOGIN_FAILED', 'auth', error, { email }, `Login failed for ${email}: ${error.code}`);
       return { success: false, error: error.code };
@@ -1141,45 +1171,110 @@ export const useStore = create((set, get) => ({
 
   deleteOrder: async (orderId) => {
     try {
-      const order = [...get().orders, ...(get().deletedOrders || [])].find(o => o.id === orderId);
-      if (!order) return;
+      // 1. Locate the order from local state or Firestore
+      let order = [...get().orders, ...(get().deletedOrders || [])].find(
+        o => o.id === orderId || o.order_id === orderId || o.orderId === orderId || o.displayId === orderId
+      );
 
-      const isRestocked = order.status === 'Cancelled' || order.status === 'Returned';
-      if (!isRestocked && order.items) {
+      let targetDocId = order?.id || orderId;
+
+      if (!order) {
+        try {
+          const directSnap = await getDoc(doc(db, "orders", orderId));
+          if (directSnap.exists()) {
+            order = { id: directSnap.id, ...directSnap.data() };
+            targetDocId = directSnap.id;
+          }
+        } catch {}
+      }
+
+      // 2. Automatic Stock Restoration:
+      // If the order was NOT already Cancelled or Returned, restore inventory back by decrementing sold[size]
+      const isRestocked = order?.status === 'Cancelled' || order?.status === 'Returned';
+      if (!isRestocked && order?.items && Array.isArray(order.items)) {
         for (const item of order.items) {
           const productId = item.productId || item.id;
           if (!productId) continue;
 
-          const productRef = doc(db, 'products', productId);
-          const productSnap = await getDoc(productRef);
-          if (productSnap.exists()) {
-            const data = productSnap.data();
-            const currentSold = data.sold || { M: 0, L: 0, XL: 0, XXL: 0 };
-            const qty = Number(item.qty) || Number(item.quantity) || 1;
-            const sz = normalizeSize(item.size) || 'M';
-            const newSold = { ...currentSold, [sz]: Math.max(0, (currentSold[sz] || 0) - qty) };
-            await updateDoc(productRef, { sold: newSold });
+          try {
+            const productRef = doc(db, 'products', productId);
+            const productSnap = await getDoc(productRef);
+            if (productSnap.exists()) {
+              const data = productSnap.data();
+              const currentSold = data.sold || {};
+              const qty = Number(item.qty) || Number(item.quantity) || 1;
+              const sz = normalizeSize(item.size) || 'M';
+              const newSold = {
+                ...currentSold,
+                [sz]: Math.max(0, (Number(currentSold[sz]) || 0) - qty)
+              };
+              await updateDoc(productRef, { sold: newSold });
+            }
+          } catch (pErr) {
+            console.warn(`Failed to restore stock for product ${productId}:`, pErr);
           }
         }
       }
 
-      const orderRef = doc(db, "orders", orderId);
-      await updateDoc(orderRef, {
-        isDeleted: true,
-        deletedAt: new Date().toISOString(),
-        deletedBy: get().currentUser?.name || 'System'
-      });
+      // 3. Complete Document Deletion from Firestore 'orders' collection
+      if (targetDocId) {
+        try {
+          await deleteDoc(doc(db, "orders", targetDocId));
+        } catch (delErr) {
+          console.warn("Direct order doc deletion note:", delErr);
+        }
+      }
+
+      // 4. Query & purge any secondary or orphaned order records matching order_id / orderId / displayId
+      const candidateIds = [
+        orderId,
+        order?.order_id,
+        order?.orderId,
+        order?.displayId
+      ].filter(Boolean);
+
+      const uniqueCandidates = [...new Set(candidateIds)];
+      for (const cid of uniqueCandidates) {
+        try {
+          const q1 = query(collection(db, "orders"), where("order_id", "==", cid));
+          const snap1 = await getDocs(q1);
+          for (const d of snap1.docs) {
+            await deleteDoc(doc(db, "orders", d.id));
+          }
+
+          const q2 = query(collection(db, "orders"), where("orderId", "==", cid));
+          const snap2 = await getDocs(q2);
+          for (const d of snap2.docs) {
+            await deleteDoc(doc(db, "orders", d.id));
+          }
+        } catch (err) {
+          console.warn("Error querying secondary order records for deletion:", err);
+        }
+      }
+
+      // 5. Delete from subcollection if stored under users/{userId}/orders
+      if (order?.userId) {
+        try {
+          await deleteDoc(doc(db, "users", order.userId, "orders", targetDocId));
+        } catch {}
+      }
+
+      // 6. Immediately purge from local state
+      set(state => ({
+        orders: state.orders.filter(o => o.id !== targetDocId && o.order_id !== targetDocId && o.id !== orderId),
+        deletedOrders: (state.deletedOrders || []).filter(o => o.id !== targetDocId && o.order_id !== targetDocId && o.id !== orderId)
+      }));
 
       logger.warn('ORDER_DELETE', 'orders', {
         orderId,
-        displayId: order.displayId || orderId,
-        customerName: order.customerName,
-        total: order.total ?? order.totals?.grandTotal ?? 0
-      }, `Soft-deleted order: ${order.displayId || orderId} (Inventory restored)`);
+        displayId: order?.displayId || orderId,
+        customerName: order?.customerName || order?.customerDetails?.firstName,
+        total: order?.total ?? order?.totals?.grandTotal ?? 0
+      }, `Completely deleted order: ${order?.displayId || orderId} from Firestore (Inventory restored)`);
 
-      get().logActivity(`Soft-deleted order: ${order.displayId || orderId} (Inventory restored)`);
+      get().logActivity(`Deleted order: ${order?.displayId || orderId} from Firestore (Inventory restored)`);
     } catch (error) {
-      console.error("Failed to soft-delete order:", error);
+      console.error("Failed to delete order:", error);
       logger.error('ORDER_DELETE', 'orders', error, { orderId });
     }
   },

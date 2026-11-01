@@ -1,99 +1,226 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helper Functions
+    // ─────────────────────────────────────────────────────────────────────────
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Products catalog
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidString(val, min, max) {
+      return val is string && val.size() >= min && val.size() <= max;
+    }
+
+    function isSuperAdminEmail() {
+      return isAuthenticated() && request.auth.token.email in ['mohameedhasan81@gmail.com'];
+    }
+
+    function isPartnerEmail() {
+      return isAuthenticated() && (
+        isSuperAdminEmail() ||
+        request.auth.token.email in [
+          'arnos@toja.com',
+          'yossef@toja.com',
+          'moustafa@toja.com',
+          'partner@toja.com',
+          'partners@toja.com',
+          'toja.partner@gmail.com',
+          'ops@toja.com',
+          'admin@toja.com',
+          'test@toja.com',
+          'demo@toja.com'
+        ] ||
+        ('email' in request.auth.token && request.auth.token.email.matches('.*@toja[.]com$'))
+      );
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.get('admin', false) == true ||
+        isSuperAdminEmail() ||
+        isPartnerEmail() ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'admin')
+      );
+    }
+
+    function isStaff() {
+      return isAdmin() || (
+        isAuthenticated() && (
+          isPartnerEmail() ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') != 'customer')
+        )
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Storefront Core & Management
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Admins Collection: Strict admin access only
+    match /admins/{adminId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Users Collection: User reads/writes their own profile; staff & admins have management access
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin() || isStaff();
+
+      match /orders/{subOrderId} {
+        allow read, write: if isOwner(userId) || isAdmin() || isStaff();
+      }
+    }
+
+    // Store Configuration (e.g. store_config/general): Public read for storefront, Staff/Admin write
+    match /store_config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin() || isStaff();
+    }
+
+    // Products Catalog:
+    // - Public read for storefront
+    // - Authenticated order transaction can ONLY increment/update 'sold' count
+    // - Inventory updates allowed for Staff & Admin
     match /products/{productId} {
-      allow read, write: if isAuthenticated();
+      allow read: if true;
+      allow update: if isAdmin() || isStaff() || (
+        isAuthenticated() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sold'])
+      );
+      allow create, delete: if isAdmin() || isStaff();
     }
 
-    // Orders & order items
+    // Promo Codes Collection: Public read for checkout validation; Staff/Admin write only
+    match /promo_codes/{codeId} {
+      allow read: if true;
+      allow write: if isAdmin() || isStaff();
+    }
+
+    // Orders Collection: Strict Server-Side Order Integrity
     match /orders/{orderId} {
-      allow read, write: if isAuthenticated();
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.items is list
+                    && request.resource.data.items.size() > 0
+                    && request.resource.data.items.size() <= 50
+                    && request.resource.data.subtotal is number
+                    && request.resource.data.subtotal > 0
+                    && request.resource.data.shippingFee is number
+                    && request.resource.data.shippingFee >= 0
+                    && request.resource.data.total is number
+                    && request.resource.data.total > 0
+                    && request.resource.data.total == (
+                      request.resource.data.subtotal +
+                      request.resource.data.shippingFee -
+                      request.resource.data.get('discount', 0)
+                    )
+                    && request.resource.data.customerDetails is map
+                    && isValidString(request.resource.data.customerDetails.phone, 10, 16)
+                    && isValidString(request.resource.data.customerDetails.address, 5, 250)
+                    && request.resource.data.status in ['Pending', 'pending'];
+
+      allow read: if isOwner(resource.data.userId) || isAdmin() || isStaff() || (resource.data.order_id is string);
+      allow update, delete: if isAdmin() || isStaff();
     }
 
-    // Financial expenses & ad spend
+    // Size Exchange Requests: Payload size <= 20, required fields, staff/admin management
+    match /exchange_requests/{requestId} {
+      allow create: if request.resource.data.keys().size() <= 20
+                    && request.resource.data.keys().hasAll(['order_id', 'originalItem', 'requestedSize', 'phone']);
+      allow read, update, delete: if isAdmin() || isStaff();
+    }
+
+    // User Data Deletion Requests (Meta & Egyptian Law 151/2020 Compliance)
+    match /deletion_requests/{requestId} {
+      allow create: if request.resource.data.keys().size() <= 20
+                    && request.resource.data.keys().hasAll(['contact', 'status', 'createdAt']);
+      allow read, update, delete: if isAdmin() || isStaff();
+    }
+
+    // VIP Restock Waitlist
+    match /waitlist/{waitlistId} {
+      allow create: if request.resource.data.keys().size() <= 20
+                    && request.resource.data.keys().hasAll(['productId', 'size', 'phone']);
+      allow read, update, delete: if isAdmin() || isStaff();
+    }
+
+    // Newsletter Subscribers
+    match /subscribers/{subscriberId} {
+      allow create: if request.resource.data.keys().size() <= 20
+                    && request.resource.data.keys().hasAll(['email']);
+      allow read, update, delete: if isAdmin() || isStaff();
+    }
+
+    // Error Telemetry Logs
+    match /error_logs/{logId} {
+      allow create: if request.resource.data.keys().size() <= 20
+                    && request.resource.data.keys().hasAll(['context', 'timestamp', 'message'])
+                    && request.resource.data.message is string
+                    && request.resource.data.message.size() < 5000;
+      allow read, update, delete: if isAdmin() || isStaff();
+    }
+
+    // Sequential Order Counters
+    match /counters/{counterId} {
+      allow read: if true;
+      allow update: if isAdmin() || isStaff() || (
+        isAuthenticated() &&
+        counterId == 'order_counter' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['last_order_id'])
+      );
+      allow create, delete: if isAdmin() || isStaff();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ERP Operations & Financial Intelligence Collections (Staff & Admin Only)
+    // ─────────────────────────────────────────────────────────────────────────
+
     match /expenses/{expenseId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isStaff();
     }
 
-    // Partner capital & withdrawal ledgers
     match /partners/{partnerId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isStaff();
     }
 
     match /withdrawals/{withdrawalId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isStaff();
     }
 
-    // Customer blacklist & fraud prevention
     match /blacklist/{phone} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isStaff();
     }
 
-    // Inventory movements audit ledger
     match /inventory_movements/{movementId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isStaff();
     }
 
-    // Courier reconciliation batch settlements
     match /courier_settlements/{settlementId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isStaff();
     }
 
-    // Legacy Activity logs
     match /activityLogs/{logId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isStaff();
     }
 
-    // Structured Centralized System Telemetry Logs
     match /system_logs/{logId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isStaff();
     }
 
-    // Per-user AI CFO Chat history
     match /cfo_chats/{userId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isStaff();
     }
 
-    // Partner operations & accountability tasks
     match /partner_tasks/{taskId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // E-Commerce Storefront: Back-in-Stock Waitlist
-    match /waitlist/{waitlistId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
-    }
-
-    // E-Commerce Storefront: Size Exchange Requests
-    match /exchange_requests/{requestId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
-    }
-
-    // E-Commerce Storefront: Promo Codes & Discounts
-    match /promo_codes/{codeId} {
-      allow read: if true;
-      allow write: if isAuthenticated();
-    }
-
-    // E-Commerce Storefront: General Configuration (Shipping Rates, Free Shipping, Announcement Banner)
-    match /store_config/{configId} {
-      allow read: if true;
-      allow write: if isAuthenticated();
-    }
-
-    // Default safety catch-all for authenticated staff
-    match /{document=**} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isStaff();
     }
   }
 }

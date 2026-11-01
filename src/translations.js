@@ -307,6 +307,9 @@ export const translations = {
     shipTo: "SHIP TO / المرسل إليه",
     senderReturnAddress: "RETURN TO / عنوان الراسل",
     cashOnDeliveryAmount: "CASH ON DELIVERY (COD)",
+    paidOnlineCollectZero: "PAID ONLINE • Collect 0 EGP",
+    paidOnlineLabel: "Paid Online (Credit / Debit Card)",
+    doNotCollectCash: "DO NOT COLLECT CASH FROM CUSTOMER",
     packingSlip: "Packing Slip",
     contents: "Contents",
     inspectionAllowed: "Inspection allowed before payment / مسموح بالمعاينة قبل الاستلام",
@@ -650,7 +653,8 @@ export const translations = {
     waitlistTab: "Back-in-Stock Waitlist",
     exchangesTab: "Size Exchange Requests",
     promoCodesTab: "Promo Codes",
-    storeSettingsTab: "Store Settings & Shipping"
+    storeSettingsTab: "Store Settings & Shipping",
+    errorLogsTab: "System Error Logs"
   },
   ar: {
     dashboard: "لوحة القيادة",
@@ -960,6 +964,9 @@ export const translations = {
     shipTo: "المرسل إليه (SHIP TO)",
     senderReturnAddress: "عنوان الراسل / المرتجع",
     cashOnDeliveryAmount: "المبلغ المطلوب تحصيله (COD)",
+    paidOnlineCollectZero: "مدفوع مسبقاً - تحصيل 0 ج.م",
+    paidOnlineLabel: "مدفوع أونلاين (بطاقة بنكية / فيزا)",
+    doNotCollectCash: "لا يتم تحصيل أي مبالغ نقدية من العميل",
     packingSlip: "بيان محتويات الطرد",
     contents: "المحتويات",
     inspectionAllowed: "مسموح بالمعاينة قبل الاستلام - شكراً لثقتكم في TOJA",
@@ -1303,6 +1310,7 @@ export const translations = {
     waitlistTab: "قائمة انتظار المنتجات",
     exchangesTab: "طلبات استبدال المقاس",
     promoCodesTab: "أكواد الخصم",
-    storeSettingsTab: "إعدادات المتجر والشحن"
+    storeSettingsTab: "إعدادات المتجر والشحن",
+    errorLogsTab: "سجل أخطاء النظام"
   }
 };

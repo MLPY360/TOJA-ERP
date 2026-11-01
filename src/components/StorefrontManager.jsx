@@ -38,7 +38,11 @@ import {
   ChevronRight,
   Filter,
   Eye,
-  Snowflake
+  Snowflake,
+  AlertOctagon,
+  Bug,
+  Terminal,
+  Mail
 } from 'lucide-react';
 import {
   collection,
@@ -46,12 +50,14 @@ import {
   onSnapshot,
   query,
   orderBy,
+  limit,
   updateDoc,
   setDoc,
   deleteDoc,
   addDoc,
   serverTimestamp,
-  getDoc
+  getDoc,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useStore, normalizePhone, normalizeSize, getAvailableStock, getProductSizes } from '../store/useStore';
@@ -76,19 +82,68 @@ function formatWhatsAppLink(rawPhone, message = '') {
   return `https://wa.me/${fullPhone}?text=${encoded}`;
 }
 
+// Format Firestore Log Timestamp
+function formatLogTimestamp(ts, isArabic) {
+  if (!ts) return '—';
+  let dateObj;
+  if (typeof ts?.toDate === 'function') {
+    dateObj = ts.toDate();
+  } else if (ts?.seconds) {
+    dateObj = new Date(ts.seconds * 1000);
+  } else if (typeof ts === 'string' || typeof ts === 'number') {
+    dateObj = new Date(ts);
+  } else if (ts instanceof Date) {
+    dateObj = ts;
+  }
+  if (!dateObj || isNaN(dateObj.getTime())) return '—';
+
+  return dateObj.toLocaleDateString(isArabic ? 'ar-EG' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+}
+
+// Format Relative Time
+function getRelativeTime(ts, isArabic) {
+  if (!ts) return '';
+  let dateObj;
+  if (typeof ts?.toDate === 'function') dateObj = ts.toDate();
+  else if (ts?.seconds) dateObj = new Date(ts.seconds * 1000);
+  else if (typeof ts === 'string' || typeof ts === 'number') dateObj = new Date(ts);
+  else if (ts instanceof Date) dateObj = ts;
+  if (!dateObj || isNaN(dateObj.getTime())) return '';
+
+  const diffSec = Math.floor((Date.now() - dateObj.getTime()) / 1000);
+  if (diffSec < 60) return isArabic ? 'الآن' : 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return isArabic ? `منذ ${diffMin} د` : `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return isArabic ? `منذ ${diffHr} س` : `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return isArabic ? `منذ ${diffDay} ي` : `${diffDay}d ago`;
+}
+
 export default function StorefrontManager() {
   const { products, currentUser, language, logInventoryMovement } = useStore();
   const isArabic = language === 'ar';
   const t = translations[language];
 
-  // Active Main Sub-Tab: 'waitlist' | 'exchanges' | 'promos' | 'settings'
+  // Active Main Sub-Tab: 'waitlist' | 'exchanges' | 'promos' | 'settings' | 'errors'
   const [activeTab, setActiveTab] = useState('waitlist');
 
   // Firestore Collections States
   const [waitlist, setWaitlist] = useState([]);
   const [exchangeRequests, setExchangeRequests] = useState([]);
   const [promoCodes, setPromoCodes] = useState([]);
+  const [errorLogs, setErrorLogs] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
+  const [isClearingLogs, setIsClearingLogs] = useState(false);
+  const [selectedErrorLog, setSelectedErrorLog] = useState(null);
+  const [errorContextFilter, setErrorContextFilter] = useState('ALL');
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
@@ -106,6 +161,11 @@ export default function StorefrontManager() {
     announcementText_en: 'Free Nationwide Shipping On Orders Over 1,500 EGP • Inspect Before You Pay',
     announcementText_ar: 'شحن مجاني لكافة محافظات مصر للطلبات بقيمة 1,500 ج.م فأكثر • معاينة مجانية قبل الدفع للمندوب',
     winterDropCountdown: '',
+    whatsappNumber: '201214112337',
+    supportEmail: 'tojastoreg@gmail.com',
+    instagramUrl: 'https://www.instagram.com/toja_storeg',
+    facebookUrl: 'https://www.facebook.com/Tojastoreg',
+    tiktokUrl: 'https://tiktok.com/@toja.eg',
     shippingRates: {
       cairo_giza: 90,
       new_cities: 95,
@@ -222,6 +282,11 @@ export default function StorefrontManager() {
             ...data,
             freeShippingThreshold: Number(data.freeShippingThreshold ?? prev.freeShippingThreshold),
             isAnnouncementActive: data.isAnnouncementActive !== undefined ? Boolean(data.isAnnouncementActive) : prev.isAnnouncementActive,
+            whatsappNumber: data.whatsappNumber || prev.whatsappNumber,
+            supportEmail: data.supportEmail || prev.supportEmail,
+            instagramUrl: data.instagramUrl || prev.instagramUrl,
+            facebookUrl: data.facebookUrl || prev.facebookUrl,
+            tiktokUrl: data.tiktokUrl || prev.tiktokUrl,
             shippingRates: {
               ...prev.shippingRates,
               ...(data.shippingRates || {})
@@ -236,11 +301,51 @@ export default function StorefrontManager() {
       }
     );
 
+    // 1e. Error Telemetry Logs (Latest 50 ordered by timestamp descending)
+    let unsubErrors = () => {};
+    try {
+      const qErrors = query(
+        collection(db, 'error_logs'),
+        orderBy('timestamp', 'desc'),
+        limit(50)
+      );
+      unsubErrors = onSnapshot(
+        qErrors,
+        (snap) => {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          setErrorLogs(list);
+        },
+        (err) => {
+          console.warn('Error logs listener note (falling back to client sort):', err.message);
+          unsubErrors = onSnapshot(
+            collection(db, 'error_logs'),
+            (fallbackSnap) => {
+              const list = fallbackSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+              list.sort((a, b) => {
+                const getSec = (item) => {
+                  if (item.timestamp?.seconds) return item.timestamp.seconds;
+                  if (typeof item.timestamp?.toDate === 'function') return item.timestamp.toDate().getTime() / 1000;
+                  if (typeof item.timestamp === 'string' || typeof item.timestamp === 'number') return new Date(item.timestamp).getTime() / 1000;
+                  return 0;
+                };
+                return getSec(b) - getSec(a);
+              });
+              setErrorLogs(list.slice(0, 50));
+            },
+            (fallbackErr) => console.warn('Error logs fallback listener note:', fallbackErr.message)
+          );
+        }
+      );
+    } catch (err) {
+      console.warn('Error initializing error_logs listener:', err);
+    }
+
     return () => {
       unsubWaitlist();
       unsubExchanges();
       unsubPromos();
       unsubConfig();
+      if (typeof unsubErrors === 'function') unsubErrors();
     };
   }, []);
 
@@ -284,6 +389,33 @@ export default function StorefrontManager() {
       return name.includes(q) || phone.includes(q) || prodName.includes(q) || size.includes(q);
     });
   }, [waitlist, statusFilter, categoryFilter, searchQuery, products]);
+
+  // Filtered Error Logs
+  const filteredErrorLogs = useMemo(() => {
+    return errorLogs.filter(log => {
+      if (errorContextFilter !== 'ALL') {
+        const ctx = (log.context || log.component || '').toLowerCase();
+        if (!ctx.includes(errorContextFilter.toLowerCase())) return false;
+      }
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      const msg = (log.message || log.sanitizedMessage || '').toLowerCase();
+      const ctx = (log.context || log.component || '').toLowerCase();
+      const url = (log.url || log.route || log.pathname || '').toLowerCase();
+      const uid = (log.userId || log.user_id || log.uid || '').toLowerCase();
+      return msg.includes(q) || ctx.includes(q) || url.includes(q) || uid.includes(q);
+    });
+  }, [errorLogs, errorContextFilter, searchQuery]);
+
+  // Distinct Contexts in errorLogs for filter pills
+  const errorContexts = useMemo(() => {
+    const set = new Set();
+    errorLogs.forEach(l => {
+      const c = l.context || l.component;
+      if (c && typeof c === 'string') set.add(c);
+    });
+    return Array.from(set);
+  }, [errorLogs]);
 
   // Quick Counts
   const pendingExchangesCount = exchangeRequests.filter(r => (r.status || 'pending') === 'pending').length;
@@ -536,6 +668,11 @@ Our team is glad to assist you with alternative available items. Thank you for s
         announcementText_en: (storeConfig.announcementText_en || '').trim(),
         announcementText_ar: (storeConfig.announcementText_ar || '').trim(),
         winterDropCountdown: storeConfig.winterDropCountdown ? storeConfig.winterDropCountdown.trim() : null,
+        whatsappNumber: (storeConfig.whatsappNumber || '201214112337').trim(),
+        supportEmail: (storeConfig.supportEmail || 'tojastoreg@gmail.com').trim(),
+        instagramUrl: (storeConfig.instagramUrl || 'https://www.instagram.com/toja_storeg').trim(),
+        facebookUrl: (storeConfig.facebookUrl || 'https://www.facebook.com/Tojastoreg').trim(),
+        tiktokUrl: (storeConfig.tiktokUrl || 'https://tiktok.com/@toja.eg').trim(),
         shippingRates: {
           cairo_giza: Number(storeConfig.shippingRates?.cairo_giza) || 90,
           new_cities: Number(storeConfig.shippingRates?.new_cities) || 95,
@@ -749,6 +886,49 @@ Our team is glad to assist you with alternative available items. Thank you for s
     }
   };
 
+  // 11. Delete Single Error Log
+  const handleDeleteSingleLog = async (logId) => {
+    if (!logId) return;
+    try {
+      await deleteDoc(doc(db, 'error_logs', logId));
+      if (selectedErrorLog?.id === logId) setSelectedErrorLog(null);
+      showToast(isArabic ? 'تم حذف سجل الخطأ.' : 'Error log deleted.');
+    } catch (err) {
+      console.error('Delete error log error:', err);
+      showToast(err.message, 'error');
+    }
+  };
+
+  // 12. Clear All Resolved Error Logs
+  const handleClearAllLogs = async () => {
+    if (errorLogs.length === 0) {
+      showToast(isArabic ? 'سجل الأخطاء فارغ بالفعل.' : 'Error logs already empty.');
+      return;
+    }
+    const confirmClear = window.confirm(
+      isArabic
+        ? `هل أنت متأكد من مسح جميع أخطاء النظام (${errorLogs.length} سجل خطأ) لتنظيف السجل؟`
+        : `Are you sure you want to clear all ${errorLogs.length} error logs?`
+    );
+    if (!confirmClear) return;
+
+    setIsClearingLogs(true);
+    try {
+      const batch = writeBatch(db);
+      errorLogs.forEach(l => {
+        batch.delete(doc(db, 'error_logs', l.id));
+      });
+      await batch.commit();
+      setSelectedErrorLog(null);
+      showToast(isArabic ? 'تم مسح سجل الأخطاء وتنظيفه بنجاح!' : 'All error logs cleared successfully!');
+    } catch (err) {
+      console.error('Clear error logs error:', err);
+      showToast(err.message, 'error');
+    } finally {
+      setIsClearingLogs(false);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-12">
       {/* Toast Notification */}
@@ -876,6 +1056,24 @@ Our team is glad to assist you with alternative available items. Thank you for s
         >
           <Sliders size={15} />
           <span>{isArabic ? 'إعدادات الشحن والشريط الإعلاني' : 'Store Settings & Shipping'}</span>
+        </button>
+
+        {/* Tab 5: System Error Logs */}
+        <button
+          onClick={() => { setActiveTab('errors'); setSearchQuery(''); setErrorContextFilter('ALL'); }}
+          className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-xs font-black tracking-wide transition-all cursor-pointer whitespace-nowrap shadow-sm ${
+            activeTab === 'errors'
+              ? 'bg-[#181E1C] text-white shadow-md'
+              : 'bg-white/80 text-slate-600 hover:bg-white hover:text-slate-900 border border-slate-200/60'
+          }`}
+        >
+          <AlertOctagon size={15} className={errorLogs.length > 0 ? "text-rose-400" : ""} />
+          <span>{isArabic ? 'سجل أخطاء النظام' : 'System Error Logs'}</span>
+          {errorLogs.length > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
+              {errorLogs.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -1829,6 +2027,91 @@ Our team is glad to assist you with alternative available items. Thank you for s
             </div>
           </div>
 
+          {/* Store Contact & Social Channels Card */}
+          <div className="bg-white/80 p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-5">
+            <div className="flex items-center gap-2.5 pb-4 border-b border-slate-100">
+              <Phone size={18} className="text-slate-700" />
+              <h3 className="text-sm font-black text-slate-900">
+                {isArabic ? 'بيانات التواصل وقنوات التواصل الاجتماعي للمتجر' : 'Store Contact & Social Media Channels'}
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1.5 flex items-center gap-1.5">
+                  <MessageCircle size={14} className="text-emerald-600" />
+                  <span>{isArabic ? 'رقم الواتساب الرسمي (بدون + أو مسافات e.g. 201214112337):' : 'Official WhatsApp Number (E.164 without +, e.g. 201214112337):'}</span>
+                </label>
+                <input
+                  type="text"
+                  value={storeConfig.whatsappNumber || ''}
+                  onChange={(e) => setStoreConfig({ ...storeConfig, whatsappNumber: e.target.value })}
+                  placeholder="201214112337"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-mono focus:ring-2 focus:ring-slate-900/10 focus:outline-none"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {isArabic ? 'يتحكم في زر الواتساب العائم، وتأكيد الطلبات، وتتبع الشحنات وبوابة الاستبدال' : 'Powers floating WhatsApp widget, 1-click order confirmations, and customer support'}
+                </p>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1.5 flex items-center gap-1.5">
+                  <Mail size={14} className="text-blue-600" />
+                  <span>{isArabic ? 'البريد الإلكتروني للدعم الفني:' : 'Support Email Address:'}</span>
+                </label>
+                <input
+                  type="email"
+                  value={storeConfig.supportEmail || ''}
+                  onChange={(e) => setStoreConfig({ ...storeConfig, supportEmail: e.target.value })}
+                  placeholder="tojastoreg@gmail.com"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium focus:ring-2 focus:ring-slate-900/10 focus:outline-none"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {isArabic ? 'البريد الموضح في أسفل الموقع وصفحة تواصل معنا' : 'Shown in footer and contact us page'}
+                </p>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1.5">
+                  {isArabic ? 'رابط حساب إنستجرام (Instagram URL):' : 'Instagram Profile URL:'}
+                </label>
+                <input
+                  type="url"
+                  value={storeConfig.instagramUrl || ''}
+                  onChange={(e) => setStoreConfig({ ...storeConfig, instagramUrl: e.target.value })}
+                  placeholder="https://www.instagram.com/toja_storeg"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium focus:ring-2 focus:ring-slate-900/10 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1.5">
+                  {isArabic ? 'رابط صفحة فيسبوك (Facebook URL):' : 'Facebook Page URL:'}
+                </label>
+                <input
+                  type="url"
+                  value={storeConfig.facebookUrl || ''}
+                  onChange={(e) => setStoreConfig({ ...storeConfig, facebookUrl: e.target.value })}
+                  placeholder="https://www.facebook.com/Tojastoreg"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium focus:ring-2 focus:ring-slate-900/10 focus:outline-none"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="font-bold text-slate-700 block mb-1.5">
+                  {isArabic ? 'رابط حساب تيك توك (TikTok URL - اختياري):' : 'TikTok Profile URL (Optional):'}
+                </label>
+                <input
+                  type="url"
+                  value={storeConfig.tiktokUrl || ''}
+                  onChange={(e) => setStoreConfig({ ...storeConfig, tiktokUrl: e.target.value })}
+                  placeholder="https://tiktok.com/@toja.eg"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium focus:ring-2 focus:ring-slate-900/10 focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Submit Save Button */}
           <div className="flex justify-end">
             <button
@@ -1845,6 +2128,249 @@ Our team is glad to assist you with alternative available items. Thank you for s
             </button>
           </div>
         </form>
+      )}
+
+      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {/* ── TAB 5: SYSTEM ERROR LOGS (STOREFRONT TELEMETRY) ──────────────── */}
+      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'errors' && (
+        <div className="space-y-6">
+          {/* Metrics Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-white/80 p-4 rounded-2xl border border-slate-200/80 shadow-sm">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                {isArabic ? 'إجمالي الأخطاء المسجلة (آخر 50)' : 'Captured Errors (Last 50)'}
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-2xl font-black text-slate-900">{errorLogs.length}</span>
+                <span className="text-[10px] text-slate-400 font-bold uppercase">/ 50 max</span>
+              </div>
+            </div>
+
+            <div className="bg-rose-50/80 p-4 rounded-2xl border border-rose-200/60 shadow-sm">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-rose-700 block mb-1">
+                {isArabic ? 'أخطاء الدفع والشراء (Checkout)' : 'Checkout & Payment Errors'}
+              </span>
+              <span className="text-2xl font-black text-rose-900">
+                {errorLogs.filter(l => (l.context || l.component || '').toLowerCase().includes('checkout')).length}
+              </span>
+            </div>
+
+            <div className="bg-amber-50/80 p-4 rounded-2xl border border-amber-200/60 shadow-sm">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700 block mb-1">
+                {isArabic ? 'أخطاء تسجيل الدخول (Login)' : 'Login & Auth Errors'}
+              </span>
+              <span className="text-2xl font-black text-amber-900">
+                {errorLogs.filter(l => (l.context || l.component || '').toLowerCase().includes('login') || (l.context || l.component || '').toLowerCase().includes('auth')).length}
+              </span>
+            </div>
+
+            <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 shadow-sm">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                {isArabic ? 'المستخدمين المتأثرين' : 'Unique Users Affected'}
+              </span>
+              <span className="text-2xl font-black text-slate-700">
+                {new Set(errorLogs.map(l => l.userId || l.user_id || l.uid || 'anonymous')).size}
+              </span>
+            </div>
+          </div>
+
+          {/* Controls: Search, Context Filters, and Clear Log Action */}
+          <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+            <div className="relative flex-1 max-w-md">
+              <Search size={16} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={isArabic ? 'بحث بنص الخطأ، السياق، المسار، أو المستخدم...' : 'Search by message, context, URL, user ID...'}
+                className="w-full ps-10 pe-4 py-2.5 bg-white/90 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Context Filter Chips */}
+              <div className="flex items-center gap-1 p-1 bg-white/80 rounded-xl border border-slate-200/80 overflow-x-auto">
+                <button
+                  onClick={() => setErrorContextFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    errorContextFilter === 'ALL'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  {isArabic ? 'الكل' : 'All'}
+                </button>
+                {['Checkout', 'Login', 'ErrorBoundary'].map(ctx => (
+                  <button
+                    key={ctx}
+                    onClick={() => setErrorContextFilter(ctx)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      errorContextFilter.toLowerCase() === ctx.toLowerCase()
+                        ? 'bg-slate-900 text-white'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    {ctx}
+                  </button>
+                ))}
+              </div>
+
+              {/* Clear Resolved Logs Action Button */}
+              <button
+                onClick={handleClearAllLogs}
+                disabled={isClearingLogs || errorLogs.length === 0}
+                className="px-4 py-2.5 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-40"
+                title={isArabic ? 'مسح كافة الأخطاء وتنظيف السجل' : 'Clear All Resolved Error Logs'}
+              >
+                <Trash2 size={15} />
+                <span>
+                  {isClearingLogs
+                    ? (isArabic ? 'جاري المسح...' : 'Clearing...')
+                    : (isArabic ? 'مسح السجل' : 'Clear Resolved Logs')}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Error Logs Table */}
+          {filteredErrorLogs.length === 0 ? (
+            <div className="bg-white/70 p-12 text-center rounded-3xl border border-slate-200/80">
+              <ShieldCheck size={40} className="mx-auto text-emerald-500 mb-3" />
+              <h3 className="text-sm font-bold text-slate-800">
+                {isArabic ? 'لا توجد أخطاء مسجلة حالياً - النظام سليم 100%' : 'No error logs captured - System is healthy'}
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                {isArabic
+                  ? 'يتم التقاط وحفظ أي استثناء أو عطل يواجهه عملاء المتجر في صفحة الدفع أو الحساب تلقائياً هنا'
+                  : 'Any unhandled exceptions, checkout errors, or runtime failures on the storefront will appear here.'}
+              </p>
+            </div>
+          ) : (
+            <div className="bg-white/80 rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-start text-xs">
+                  <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                    <tr>
+                      <th className="py-3.5 px-4 text-start">{isArabic ? 'التاريخ والوقت' : 'Timestamp'}</th>
+                      <th className="py-3.5 px-4 text-start">{isArabic ? 'السياق / المكون' : 'Context / Component'}</th>
+                      <th className="py-3.5 px-4 text-start">{isArabic ? 'رسالة الخطأ' : 'Sanitized Message'}</th>
+                      <th className="py-3.5 px-4 text-start">{isArabic ? 'المسار (URL)' : 'Route URL'}</th>
+                      <th className="py-3.5 px-4 text-start">{isArabic ? 'المستخدم (User ID)' : 'User ID'}</th>
+                      <th className="py-3.5 px-4 text-end">{isArabic ? 'الإجراءات' : 'Actions'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredErrorLogs.map(log => {
+                      const contextStr = log.context || log.component || log.source || 'General';
+                      const messageStr = log.message || log.sanitizedMessage || log.error || 'Unknown error occurred';
+                      const routeStr = log.url || log.route || log.pathname || '—';
+                      const userStr = log.userId || log.user_id || log.uid || 'anonymous';
+                      const isCheckout = contextStr.toLowerCase().includes('checkout');
+                      const isLogin = contextStr.toLowerCase().includes('login') || contextStr.toLowerCase().includes('auth');
+                      const isErrorBoundary = contextStr.toLowerCase().includes('boundary');
+
+                      return (
+                        <tr key={log.id} className="hover:bg-slate-50/70 transition-colors">
+                          {/* Timestamp */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <div className="flex flex-col">
+                              <span className="font-mono text-[11px] font-bold text-slate-800">
+                                {formatLogTimestamp(log.timestamp || log.createdAt, isArabic)}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                {getRelativeTime(log.timestamp || log.createdAt, isArabic)}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Context / Component */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border ${
+                              isCheckout
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : isLogin
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : isErrorBoundary
+                                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                : 'bg-slate-100 text-slate-700 border-slate-200'
+                            }`}>
+                              <Bug size={11} />
+                              <span>{contextStr}</span>
+                            </span>
+                          </td>
+
+                          {/* Sanitized Message */}
+                          <td className="py-3.5 px-4 max-w-xs md:max-w-md">
+                            <div className="flex items-center gap-2 group">
+                              <span
+                                className="font-mono text-[11px] text-slate-800 truncate block cursor-pointer hover:text-slate-950 font-semibold"
+                                onClick={() => setSelectedErrorLog(log)}
+                                title={messageStr}
+                              >
+                                {messageStr}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(messageStr);
+                                  showToast(isArabic ? 'تم نسخ نص الخطأ!' : 'Error message copied!');
+                                }}
+                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-700 transition-opacity cursor-pointer p-1"
+                                title={isArabic ? 'نسخ نص الخطأ' : 'Copy message'}
+                              >
+                                <Copy size={12} />
+                              </button>
+                            </div>
+                          </td>
+
+                          {/* Route URL */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className="font-mono text-[11px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/60 inline-block max-w-[140px] truncate" title={routeStr}>
+                              {routeStr}
+                            </span>
+                          </td>
+
+                          {/* User ID */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-1 font-mono text-[11px] text-slate-600">
+                              <User size={12} className="text-slate-400" />
+                              <span className="truncate max-w-[100px]" title={userStr}>
+                                {userStr}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="py-3.5 px-4 text-end whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Inspect details button */}
+                              <button
+                                onClick={() => setSelectedErrorLog(log)}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                                title={isArabic ? 'معاينة تفاصيل الخطأ' : 'Inspect Details'}
+                              >
+                                <Eye size={15} />
+                              </button>
+
+                              {/* Single-item delete button */}
+                              <button
+                                onClick={() => handleDeleteSingleLog(log.id)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                                title={isArabic ? 'حذف هذا السجل' : 'Delete log'}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* ═════════════════════════════════════════════════════════════════════ */}
@@ -2351,6 +2877,156 @@ Our team is glad to assist you with alternative available items. Thank you for s
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 5. Error Log Detail Inspector Modal */}
+      <AnimatePresence>
+        {selectedErrorLog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 max-w-xl w-full shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-rose-50 text-rose-700 rounded-xl">
+                    <AlertOctagon size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-900 text-sm">
+                      {isArabic ? 'تفاصيل خطأ النظام' : 'System Error Details'}
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-mono">
+                      ID: {selectedErrorLog.id}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedErrorLog(null)}
+                  className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                >
+                  <XCircle size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                {/* Meta details grid */}
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block mb-0.5">
+                      {isArabic ? 'السياق / المكون:' : 'Context / Component:'}
+                    </span>
+                    <span className="font-bold text-slate-800">
+                      {selectedErrorLog.context || selectedErrorLog.component || selectedErrorLog.source || 'General'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block mb-0.5">
+                      {isArabic ? 'المسار (Route URL):' : 'Route URL:'}
+                    </span>
+                    <span className="font-mono text-slate-800">
+                      {selectedErrorLog.url || selectedErrorLog.route || selectedErrorLog.pathname || '—'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block mb-0.5">
+                      {isArabic ? 'التاريخ والوقت:' : 'Timestamp:'}
+                    </span>
+                    <span className="font-mono text-slate-800">
+                      {formatLogTimestamp(selectedErrorLog.timestamp || selectedErrorLog.createdAt, isArabic)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block mb-0.5">
+                      {isArabic ? 'معرف المستخدم:' : 'User ID:'}
+                    </span>
+                    <span className="font-mono text-slate-800">
+                      {selectedErrorLog.userId || selectedErrorLog.user_id || selectedErrorLog.uid || 'anonymous'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Sanitized Message */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700 block">
+                      {isArabic ? 'رسالة الخطأ المعقمة (Sanitized Message):' : 'Sanitized Message:'}
+                    </label>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedErrorLog.message || selectedErrorLog.sanitizedMessage || '');
+                        showToast(isArabic ? 'تم نسخ الرسالة!' : 'Message copied!');
+                      }}
+                      className="text-[11px] font-bold text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy size={12} />
+                      <span>{isArabic ? 'نسخ' : 'Copy'}</span>
+                    </button>
+                  </div>
+                  <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-200/60 font-mono text-rose-900 break-words text-[11px]">
+                    {selectedErrorLog.message || selectedErrorLog.sanitizedMessage || 'No message provided'}
+                  </div>
+                </div>
+
+                {/* Stack Trace if present */}
+                {selectedErrorLog.stack && (
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      {isArabic ? 'تتبع المكدس (Stack Trace):' : 'Stack Trace:'}
+                    </label>
+                    <pre className="p-3 bg-slate-900 text-emerald-400 rounded-xl overflow-x-auto text-[10px] font-mono leading-relaxed max-h-40">
+                      {selectedErrorLog.stack}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Raw Document JSON */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700 block">
+                      {isArabic ? 'بيانات المستند الخام (Full Raw Payload):' : 'Raw Document JSON:'}
+                    </label>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(JSON.stringify(selectedErrorLog, null, 2));
+                        showToast(isArabic ? 'تم نسخ JSON كامل!' : 'Full JSON copied!');
+                      }}
+                      className="text-[11px] font-bold text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy size={12} />
+                      <span>{isArabic ? 'نسخ JSON' : 'Copy JSON'}</span>
+                    </button>
+                  </div>
+                  <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl overflow-x-auto text-[10px] font-mono leading-relaxed max-h-48">
+                    {JSON.stringify(selectedErrorLog, null, 2)}
+                  </pre>
+                </div>
+
+                {/* Footer Buttons */}
+                <div className="pt-2 flex justify-between items-center">
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSingleLog(selectedErrorLog.id)}
+                    className="px-3.5 py-2 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 size={14} />
+                    <span>{isArabic ? 'حذف هذا السجل' : 'Delete Log'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedErrorLog(null)}
+                    className="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    {isArabic ? 'إغلاق' : 'Close'}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

@@ -23,11 +23,15 @@ import {
   User,
   Wand2,
   Loader2,
-  Copy
+  Copy,
+  Banknote,
+  Smartphone,
+  CreditCard
 } from 'lucide-react';
 import { generateSmartWhatsApp } from '../services/aiService';
 import { useStore, normalizePhone, getAvailableStock, getProductSizes, ORDER_DISPATCHERS } from '../store/useStore';
 import { translations } from '../translations';
+import { isOrderPaidOnline, getOrderPaymentInfo } from '../utils/paymentUtils';
 import ExportOrdersModal from './ExportOrdersModal';
 import EditOrderModal from './EditOrderModal';
 import OrderInvoiceModal from './OrderInvoiceModal';
@@ -1340,6 +1344,34 @@ export default function OrdersView() {
                   <div>
                     <span className="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider">{t.totalValue}</span>
                     <span className="text-base font-black text-[#597867]">{cTotal.toLocaleString('en-EG')} EGP</span>
+                    {/* Payment Status Badge */}
+                    <div className="mt-1">
+                      {(() => {
+                        const payInfo = getOrderPaymentInfo(order, isAr);
+                        if (payInfo.type === 'card' && payInfo.isPaid) {
+                          return (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full shadow-xs">
+                              <ShieldCheck size={10} className="text-emerald-700" />
+                              <span>{isAr ? 'مدفوع مسبقاً - تحصيل 0 ج.م' : 'PAID ONLINE (Collect 0 EGP)'}</span>
+                            </span>
+                          );
+                        }
+                        if (payInfo.type === 'wallet') {
+                          return (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200 px-1.5 py-0.5 rounded-full">
+                              <Smartphone size={10} className="text-purple-600" />
+                              <span>{payInfo.badgeText}</span>
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                            <Banknote size={10} className="text-amber-700" />
+                            <span>{isAr ? `تحصيل: ${cTotal.toLocaleString('en-EG')} ج.م` : `COD: ${cTotal.toLocaleString('en-EG')} EGP`}</span>
+                          </span>
+                        );
+                      })()}
+                    </div>
                   </div>
 
                   <div className="flex flex-col items-end gap-0.5 text-end">
@@ -1624,13 +1656,39 @@ export default function OrdersView() {
 
                       <td className="p-4 align-middle text-start">
                         <p className="font-bold text-[#597867]">{cTotal.toLocaleString('en-EG')} EGP</p>
-                        <div className="flex flex-col gap-0.5 mt-0.5">
+                        <div className="flex flex-col gap-1 mt-0.5">
                           <p className="text-[10px] text-slate-500">Shipping: {cShipping} EGP</p>
                           {order.discount?.amount > 0 && (
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200/80 px-1.5 py-0.5 rounded w-fit">
                               <Tag size={9} /> -{Number(order.discount.amount).toLocaleString('en-EG')} EGP ({order.discount.type === 'percentage' ? `${order.discount.value}%` : 'Fixed'})
                             </span>
                           )}
+                          {/* Payment Status Badge */}
+                          {(() => {
+                            const payInfo = getOrderPaymentInfo(order, isAr);
+                            if (payInfo.type === 'card' && payInfo.isPaid) {
+                              return (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full w-fit shadow-xs">
+                                  <ShieldCheck size={11} className="text-emerald-700" />
+                                  <span>{isAr ? 'مدفوع مسبقاً - تحصيل 0 ج.م' : 'PAID ONLINE • Collect 0 EGP'}</span>
+                                </span>
+                              );
+                            }
+                            if (payInfo.type === 'wallet') {
+                              return (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200 px-2 py-0.5 rounded-full w-fit">
+                                  <Smartphone size={10} className="text-purple-600" />
+                                  <span>{payInfo.badgeText}</span>
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-full w-fit">
+                                <Banknote size={10} className="text-amber-700" />
+                                <span>{isAr ? `تحصيل: ${cTotal.toLocaleString('en-EG')} ج.م` : `COD: ${cTotal.toLocaleString('en-EG')} EGP`}</span>
+                              </span>
+                            );
+                          })()}
                         </div>
                       </td>
 
@@ -1912,7 +1970,7 @@ export default function OrdersView() {
               <button
                 type="button"
                 onClick={async () => {
-                  const id = orderToDelete.id;
+                  const id = orderToDelete.id || orderToDelete.order_id || orderToDelete.orderId;
                   setOrderToDelete(null);
                   await deleteOrder(id);
                 }}

@@ -1,8 +1,9 @@
 import React, { useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Printer, Package, MapPin, Phone, User, CheckCircle } from 'lucide-react';
+import { X, Printer, Package, MapPin, Phone, User, CheckCircle, ShieldCheck } from 'lucide-react';
 import { translations } from '../translations';
 import { useStore } from '../store/useStore';
+import { isOrderPaidOnline } from '../utils/paymentUtils';
 
 export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
   const { language } = useStore();
@@ -21,6 +22,7 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
   const carrier = order.courierDetails?.carrierName || order.courierReconciliation?.carrierName || 'Bosta Express';
   const trackingNumber = order.courierDetails?.trackingNumber || order.trackingNumber || displayId;
   const printedDate = order.orderDate || (order.createdAt ? (typeof order.createdAt === 'string' ? order.createdAt.slice(0, 10) : new Date(order.createdAt).toISOString().slice(0, 10)) : new Date().toISOString().slice(0, 10));
+  const isPaidOnline = isOrderPaidOnline(order);
 
   // Visual Barcode generator
   const renderBarcodeBars = () => {
@@ -204,18 +206,33 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
 
             {/* Bottom COD Block & Courier Notice */}
             <div className="pt-2">
-              {/* High Contrast COD Box */}
-              <div className="border-4 border-black p-2.5 text-center bg-black text-white rounded">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-200">
-                  {t.cashOnDeliveryAmount}
-                </p>
-                <p className="text-2xl font-black tracking-tight font-mono my-0.5">
-                  {orderTotal.toLocaleString('en-EG')} EGP
-                </p>
-                <p className="text-[9px] font-bold text-slate-300">
-                  (Shipping & Taxes Included)
-                </p>
-              </div>
+              {/* High Contrast COD / PAID ONLINE Box */}
+              {isPaidOnline ? (
+                <div className="border-4 border-black p-2 text-center bg-black text-white rounded">
+                  <div className="flex items-center justify-center gap-1 text-[11px] font-black uppercase tracking-widest text-[#00FF66]">
+                    <ShieldCheck size={14} className="text-[#00FF66]" />
+                    <span>PAID ONLINE • مدفوع مسبقاً بالفيزا</span>
+                  </div>
+                  <p className="text-2xl font-black tracking-tight font-mono my-0.5 text-[#00FF66]">
+                    COLLECT 0 EGP / تحصيل 0 ج.م
+                  </p>
+                  <p className="text-[9px] font-black text-white uppercase tracking-wider">
+                    DO NOT COLLECT CASH • لا يتم تحصيل أي مبالغ من العميل
+                  </p>
+                </div>
+              ) : (
+                <div className="border-4 border-black p-2.5 text-center bg-black text-white rounded">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-200">
+                    {t.cashOnDeliveryAmount}
+                  </p>
+                  <p className="text-2xl font-black tracking-tight font-mono my-0.5">
+                    {orderTotal.toLocaleString('en-EG')} EGP
+                  </p>
+                  <p className="text-[9px] font-bold text-slate-300">
+                    (Shipping & Taxes Included)
+                  </p>
+                </div>
+              )}
 
               {/* Customer Notice Footer */}
               <div className="mt-2 text-center text-[9px] font-extrabold text-slate-700 leading-tight">
