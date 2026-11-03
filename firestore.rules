@@ -1,4 +1,5 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -62,33 +63,10 @@ service cloud.firestore {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Storefront Core & Management
+    // Storefront Core & Public Collections
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Admins Collection: Strict admin access only
-    match /admins/{adminId} {
-      allow read, write: if isAdmin();
-    }
-
-    // Users Collection: User reads/writes their own profile; staff & admins have management access
-    match /users/{userId} {
-      allow read, write: if isOwner(userId) || isAdmin() || isStaff();
-
-      match /orders/{subOrderId} {
-        allow read, write: if isOwner(userId) || isAdmin() || isStaff();
-      }
-    }
-
-    // Store Configuration (e.g. store_config/general): Public read for storefront, Staff/Admin write
-    match /store_config/{configId} {
-      allow read: if true;
-      allow write: if isAdmin() || isStaff();
-    }
-
-    // Products Catalog:
-    // - Public read for storefront
-    // - Authenticated order transaction can ONLY increment/update 'sold' count
-    // - Inventory updates allowed for Staff & Admin
+    // Products Catalog
     match /products/{productId} {
       allow read: if true;
       allow update: if isAdmin() || isStaff() || (
@@ -98,13 +76,48 @@ service cloud.firestore {
       allow create, delete: if isAdmin() || isStaff();
     }
 
-    // Promo Codes Collection: Public read for checkout validation; Staff/Admin write only
+    // Storefront Global Settings
+    match /store_config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin() || isStaff();
+    }
+
+    // Promo Codes Engine
     match /promo_codes/{codeId} {
       allow read: if true;
       allow write: if isAdmin() || isStaff();
     }
 
-    // Orders Collection: Strict Server-Side Order Integrity
+    // Sequential Counters
+    match /counters/{counterId} {
+      allow read: if true;
+      allow update: if isAdmin() || isStaff() || (
+        isAuthenticated() &&
+        counterId == 'order_counter' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['last_order_id'])
+      );
+      allow create, delete: if isAdmin() || isStaff();
+    }
+
+    // Back-in-Stock VIP Waitlist
+    match /waitlist/{waitlistId} {
+      allow create: if request.resource.data.keys().size() <= 20
+                    && request.resource.data.keys().hasAll(['productId', 'size', 'phone']);
+      allow read, update, delete: if isAdmin() || isStaff();
+    }
+
+    // Newsletter Subscribers
+    match /subscribers/{subscriberId} {
+      allow create: if request.resource.data.keys().size() <= 20
+                    && request.resource.data.keys().hasAll(['email']);
+      allow read, update, delete: if isAdmin() || isStaff();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Customer Orders & Profiles
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Orders Collection
     match /orders/{orderId} {
       allow create: if isAuthenticated()
                     && request.resource.data.userId == request.auth.uid
@@ -131,57 +144,36 @@ service cloud.firestore {
       allow update, delete: if isAdmin() || isStaff();
     }
 
-    // Size Exchange Requests: Payload size <= 20, required fields, staff/admin management
+    // User Profiles & Nested Orders
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin() || isStaff();
+
+      match /orders/{subOrderId} {
+        allow read, write: if isOwner(userId) || isAdmin() || isStaff();
+      }
+    }
+
+    // Size Exchange Requests
     match /exchange_requests/{requestId} {
       allow create: if request.resource.data.keys().size() <= 20
                     && request.resource.data.keys().hasAll(['order_id', 'originalItem', 'requestedSize', 'phone']);
       allow read, update, delete: if isAdmin() || isStaff();
     }
 
-    // User Data Deletion Requests (Meta & Egyptian Law 151/2020 Compliance)
+    // User Data Deletion Requests (Law 151/2020 Compliance)
     match /deletion_requests/{requestId} {
       allow create: if request.resource.data.keys().size() <= 20
                     && request.resource.data.keys().hasAll(['contact', 'status', 'createdAt']);
       allow read, update, delete: if isAdmin() || isStaff();
     }
 
-    // VIP Restock Waitlist
-    match /waitlist/{waitlistId} {
-      allow create: if request.resource.data.keys().size() <= 20
-                    && request.resource.data.keys().hasAll(['productId', 'size', 'phone']);
-      allow read, update, delete: if isAdmin() || isStaff();
-    }
-
-    // Newsletter Subscribers
-    match /subscribers/{subscriberId} {
-      allow create: if request.resource.data.keys().size() <= 20
-                    && request.resource.data.keys().hasAll(['email']);
-      allow read, update, delete: if isAdmin() || isStaff();
-    }
-
-    // Error Telemetry Logs
-    match /error_logs/{logId} {
-      allow create: if request.resource.data.keys().size() <= 20
-                    && request.resource.data.keys().hasAll(['context', 'timestamp', 'message'])
-                    && request.resource.data.message is string
-                    && request.resource.data.message.size() < 5000;
-      allow read, update, delete: if isAdmin() || isStaff();
-    }
-
-    // Sequential Order Counters
-    match /counters/{counterId} {
-      allow read: if true;
-      allow update: if isAdmin() || isStaff() || (
-        isAuthenticated() &&
-        counterId == 'order_counter' &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['last_order_id'])
-      );
-      allow create, delete: if isAdmin() || isStaff();
-    }
-
     // ─────────────────────────────────────────────────────────────────────────
     // ERP Operations & Financial Intelligence Collections (Staff & Admin Only)
     // ─────────────────────────────────────────────────────────────────────────
+
+    match /admins/{adminId} {
+      allow read, write: if isAdmin();
+    }
 
     match /expenses/{expenseId} {
       allow read, write: if isStaff();
@@ -222,5 +214,14 @@ service cloud.firestore {
     match /partner_tasks/{taskId} {
       allow read, write: if isStaff();
     }
+
+    match /error_logs/{logId} {
+      allow create: if request.resource.data.keys().size() <= 20
+                    && request.resource.data.keys().hasAll(['context', 'timestamp', 'message'])
+                    && request.resource.data.message is string
+                    && request.resource.data.message.size() < 5000;
+      allow read, update, delete: if isAdmin() || isStaff();
+    }
   }
 }
+

@@ -1,0 +1,48 @@
+name: Security, Rules & Build Audit
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  security-and-quality-gate:
+    name: Security, Rules & Build Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout Repository Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ⚙️ Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Install Project Dependencies
+        run: npm ci || npm install
+
+      - name: 🔍 Git Secret Detection (Gitleaks Action)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: false
+
+      - name: 🛡️ In-House Deep Secrets & Plaintext Credentials Scanner
+        run: node scripts/scan-secrets.mjs
+
+      - name: 🧱 Firestore Security Rules Compilation & Syntax Validator
+        run: node scripts/validate-rules.mjs
+
+      - name: 🧹 Static Linter Gate (Oxlint)
+        run: npx oxlint
+
+      - name: 🚀 Production Build Verification (Vite)
+        run: npm run build
+
