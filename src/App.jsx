@@ -27,7 +27,24 @@ function formatEGP(amount) {
 const getSum = (obj) => Object.values(obj || {}).reduce((a, b) => a + b, 0);
 
 export default function App() {
-  const { currentUser, logout, authLoading, products, orders, expenses, partnerTasks, exchangeRequests, waitlist, language, toggleLanguage, userRole, setUserRole } = useStore();
+  const {
+    currentUser,
+    logout,
+    authLoading,
+    accessDenied,
+    accessDeniedEmail,
+    clearAccessDenied,
+    products,
+    orders,
+    expenses,
+    partnerTasks,
+    exchangeRequests,
+    waitlist,
+    language,
+    toggleLanguage,
+    userRole,
+    setUserRole
+  } = useStore();
   const t = translations[language];
 
   useEffect(() => {
@@ -203,12 +220,59 @@ export default function App() {
     );
   }
 
-  // 2. Unauthenticated Guard: Display Login Modal
+  // 2. Explicit Security Lockdown Guard: Customer attempted login or barred session
+  if (!currentUser && accessDenied) {
+    return (
+      <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="max-w-md w-full bg-slate-900 border border-red-500/30 rounded-3xl p-8 space-y-5 shadow-2xl relative overflow-hidden">
+          <div className="w-16 h-16 bg-red-500/10 text-red-400 rounded-2xl flex items-center justify-center mx-auto border border-red-500/20 shadow-inner">
+            <ShieldAlert size={32} />
+          </div>
+          <div>
+            <span className="text-[10px] font-mono tracking-widest text-red-400 bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20 uppercase font-bold">
+              Access Denied
+            </span>
+            <h2 className="text-lg font-black text-white mt-3">
+              Access Denied: هذا النظام مخصص فقط لفريق عمل TOJA
+            </h2>
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            {language === 'ar'
+              ? 'تم حظر الوصول وتسجيل الخروج تلقائياً. بوابة Selling System مخصصة حصرياً لفريق العمليات والإدارة في TOJA، ولا يُسمح لحسابات العملاء بالدخول.'
+              : 'Access denied and session terminated automatically. This Selling System portal is restricted exclusively to authorized TOJA staff and partners.'}
+          </p>
+          {accessDeniedEmail && (
+            <div className="text-[11px] font-mono text-slate-400 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
+              {language === 'ar' ? 'البريد المستخدم:' : 'Attempted Account:'} {accessDeniedEmail}
+            </div>
+          )}
+          <div className="flex flex-col gap-2 pt-2">
+            <a
+              href="https://toja-storefront.web.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md text-center block"
+            >
+              {language === 'ar' ? 'العودة لمتجر TOJA الرئيسي' : 'Return to TOJA Store'}
+            </a>
+            <button
+              onClick={() => clearAccessDenied && clearAccessDenied()}
+              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer border border-slate-700"
+            >
+              {language === 'ar' ? 'تسجيل الدخول بحساب فريق العمل' : 'Sign In as Staff Member'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Unauthenticated Guard: Display Login Modal
   if (!currentUser) {
     return <LoginModal />;
   }
 
-  // 3. Customer Role Guard: Regular storefront customer accounts are strictly barred from ERP
+  // 4. Customer Role Guard: Regular storefront customer accounts are strictly barred from ERP
   const isAuthorizedStaff = isSuperAdmin(currentUser.email) || isPartnerStaff(currentUser.email) || userRole === 'admin' || userRole === 'operations' || (currentUser.role && currentUser.role !== 'customer');
 
   if (!isAuthorizedStaff) {
@@ -219,7 +283,7 @@ export default function App() {
             <ShieldAlert size={28} />
           </div>
           <h2 className="text-lg font-black text-white">
-            {language === 'ar' ? 'غير مصرح بالوصول لنظام العمليات' : 'Restricted Staff Area'}
+            Access Denied: هذا النظام مخصص فقط لفريق عمل TOJA
           </h2>
           <p className="text-xs text-slate-400 leading-relaxed">
             {language === 'ar'

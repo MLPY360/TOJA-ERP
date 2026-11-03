@@ -377,6 +377,8 @@ export const useStore = create((set, get) => ({
   translations,
   listenersInitialized: false,
   authLoading: true,
+  accessDenied: false,
+  accessDeniedEmail: null,
 
   initAuthListener: () => {
     onAuthStateChanged(auth, async (user) => {
@@ -408,20 +410,40 @@ export const useStore = create((set, get) => ({
             console.warn("Could not sync partner role to users doc:", e);
           }
         } else {
-          // For all other users, default to 'operations' or read assigned role from users/{uid}
+          // Strict Lockdown: Verify if user is explicitly authorized staff/admin in database
+          let isDbStaff = false;
           try {
             const userSnap = await getDoc(doc(db, "users", user.uid));
             if (userSnap.exists()) {
               const data = userSnap.data();
-              if (data.role && data.role !== 'admin') {
-                role = data.role;
+              if (data.role === 'admin' || data.role === 'staff' || data.isStaff === true) {
+                isDbStaff = true;
+                role = data.role === 'admin' ? 'admin' : 'operations';
               }
             }
           } catch (e) {
             console.warn("Could not fetch user document for role:", e);
           }
-          // Strict lockdown: non-super admin and non-partner CANNOT have 'admin' role under any circumstance
-          if (role === 'admin') {
+
+          if (!isDbStaff) {
+            // Unwhitelisted customer attempting to access ERP: Immediate signOut & lock
+            console.warn(`[SECURITY LOCKDOWN] Customer ${user.email} denied access to Selling System. Signing out.`);
+            try {
+              await signOut(auth);
+            } catch {}
+            localStorage.removeItem('toja_user');
+            localStorage.removeItem('toja_user_role');
+            set({
+              currentUser: null,
+              accessDenied: true,
+              accessDeniedEmail: user.email,
+              authLoading: false
+            });
+            return;
+          }
+
+          // Non-super admin staff cannot have full super-admin role
+          if (role === 'admin' && !isSuper && !isPartner) {
             role = 'operations';
           }
           localStorage.setItem('toja_user_role', role);
@@ -433,7 +455,7 @@ export const useStore = create((set, get) => ({
           email: user.email,
           role
         };
-        set({ currentUser: userData, userRole: role, authLoading: false });
+        set({ currentUser: userData, userRole: role, accessDenied: false, accessDeniedEmail: null, authLoading: false });
         localStorage.setItem('toja_user', JSON.stringify(userData));
         get().initializeListeners();
       } else {
@@ -553,6 +575,7 @@ export const useStore = create((set, get) => ({
 
   login: async (email, password) => {
     try {
+      set({ accessDenied: false, accessDeniedEmail: null });
       const userCred = await signInWithEmailAndPassword(auth, email, password);
       logger.info('AUTH_LOGIN', 'auth', { email, uid: userCred.user?.uid }, `Logged into the system as ${email}`);
       get().logActivity('Logged into the system');
@@ -582,12 +605,15 @@ export const useStore = create((set, get) => ({
         logger.info('AUTH_LOGOUT', 'auth', { userId: user.id, name: user.name, email: user.email }, `User ${user.name} logged out`);
         get().logActivity('Logged out of the system');
       }
+      set({ accessDenied: false, accessDeniedEmail: null });
       await signOut(auth);
     } catch (error) {
       console.error("Logout failed:", error);
       logger.error('AUTH_LOGOUT_FAILED', 'auth', error, {}, 'Logout error');
     }
   },
+
+  clearAccessDenied: () => set({ accessDenied: false, accessDeniedEmail: null }),
 
   logActivity: async (action) => {
     const user = get().currentUser
