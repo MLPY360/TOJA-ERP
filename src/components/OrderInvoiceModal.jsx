@@ -4,21 +4,20 @@ import { X, Printer, Tag, Phone, MapPin, Calendar, User, Package, ShieldCheck, B
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
 import { isOrderPaidOnline, getOrderPaymentInfo } from '../utils/paymentUtils';
-import { getGovernorateName } from '../utils/governorates';
+import { getGovernorateName, safeResolveGovernorate } from '../utils/governorates';
 
 export default function OrderInvoiceModal({ isOpen, onClose, order }) {
   const { products, language } = useStore();
   const t = translations[language];
+  const isArabic = language === 'ar';
 
   if (!isOpen || !order) return null;
 
   const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
   const cName = order?.customerName || (order?.customerDetails ? `${order.customerDetails.firstName || ''} ${order.customerDetails.lastName || ''}`.trim() : '') || 'Customer';
   const cPhone = order?.phone || order?.customerDetails?.phone || '';
-  const rawGov = order?.governorate || order?.customerDetails?.governorate || order?.customerDetails?.governorateName || order?.customerDetails?.city || '';
-  const cCity = typeof rawGov === 'string' && rawGov.trim()
-    ? getGovernorateName(rawGov.trim(), language === 'ar')
-    : (typeof rawGov === 'object' && rawGov !== null ? getGovernorateName(rawGov, language === 'ar') : (typeof rawGov === 'string' ? rawGov : ''));
+  const rawGov = order?.customerDetails?.governorate || order?.customerDetails?.governorateName || order?.governorate || order?.customerDetails?.city || '';
+  const cCity = safeResolveGovernorate(order, isArabic) || (typeof rawGov === 'string' && rawGov.trim() ? getGovernorateName(rawGov.trim(), isArabic) : '');
   const cAddress = typeof order?.address === 'string'
     ? order.address
     : (typeof order?.customerDetails?.address === 'string' ? order.customerDetails.address : '');

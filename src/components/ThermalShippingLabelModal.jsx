@@ -4,10 +4,12 @@ import { X, Printer, Package, MapPin, Phone, User, CheckCircle, ShieldCheck } fr
 import { translations } from '../translations';
 import { useStore } from '../store/useStore';
 import { isOrderPaidOnline } from '../utils/paymentUtils';
+import { safeResolveGovernorate } from '../utils/governorates';
 
 export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
   const { language } = useStore();
   const t = translations[language];
+  const isArabic = language === 'ar';
 
   if (!isOpen || !order) return null;
 
@@ -149,7 +151,7 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
                     {t.shipTo}
                   </div>
                   <div className="border-2 border-black px-2 py-0.5 font-black text-xs uppercase tracking-wider bg-slate-100">
-                    📍 {typeof order.governorate === 'string' && order.governorate.trim() ? order.governorate : (typeof order.customerDetails?.governorate === 'string' ? order.customerDetails.governorate : 'GIZA')}
+                    📍 {safeResolveGovernorate(order, isArabic) || 'GIZA'}
                   </div>
                 </div>
 

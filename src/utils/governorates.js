@@ -101,7 +101,7 @@ export const getGovernorateName = (govIdOrName, isArabic = true) => {
 
   const gov = getGovernorateById(target);
   if (!gov) return target;
-  return isArabic ? gov.nameAr : gov.nameEn;
+  return isArabic !== false ? gov.nameAr : gov.nameEn;
 };
 
 /**

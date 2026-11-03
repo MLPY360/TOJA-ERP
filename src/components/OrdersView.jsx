@@ -38,7 +38,7 @@ import OrderInvoiceModal from './OrderInvoiceModal';
 import ThermalShippingLabelModal from './ThermalShippingLabelModal';
 import ImageLightbox from './ImageLightbox';
 import { getSafeProductImage, handleImageError } from '../utils/imageUtils';
-import { getGovernorateName } from '../utils/governorates';
+import { getGovernorateName, safeResolveGovernorate } from '../utils/governorates';
 
 const getStatusBadge = (status) => {
   switch (status) {
@@ -353,6 +353,8 @@ function BlacklistModal({ isOpen, onClose, customer, onToggle, language }) {
 
 function WhatsAppModal({ isOpen, onClose, order, language }) {
   const t = translations[language];
+  const isArabic = language === 'ar';
+  const isAr = isArabic;
   if (!isOpen || !order) return null;
 
   const cPhone = order.phone || order.customerDetails?.phone || '';
@@ -992,6 +994,8 @@ export default function OrdersView() {
   } = useStore();
 
   const t = translations[language];
+  const isArabic = language === 'ar';
+  const isAr = isArabic;
   const [viewMode, setViewMode] = useState('active'); // 'active' | 'trash'
   const [searchQuery, setSearchQuery] = useState('');
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -1173,10 +1177,8 @@ export default function OrdersView() {
           filtered.map((order, index) => {
             const cName = order?.customerName || (order?.customerDetails ? `${order.customerDetails.firstName || ''} ${order.customerDetails.lastName || ''}`.trim() : '') || 'Customer';
             const cPhone = order?.phone || order?.customerDetails?.phone || '';
-            const rawGov = order?.governorate || order?.customerDetails?.governorate || order?.customerDetails?.governorateName || order?.customerDetails?.city || '';
-            const cCity = typeof rawGov === 'string' && rawGov.trim()
-              ? getGovernorateName(rawGov.trim(), isArabic)
-              : (typeof rawGov === 'object' && rawGov !== null ? getGovernorateName(rawGov, isArabic) : (typeof rawGov === 'string' ? rawGov : ''));
+            const rawGov = order?.customerDetails?.governorate || order?.customerDetails?.governorateName || order?.governorate || order?.customerDetails?.city || '';
+            const cCity = safeResolveGovernorate(order, isArabic) || (typeof rawGov === 'string' && rawGov.trim() ? getGovernorateName(rawGov.trim(), isArabic) : '');
             const cAddress = typeof order?.address === 'string'
               ? order.address
               : (typeof order?.customerDetails?.address === 'string' ? order.customerDetails.address : '');
@@ -1547,10 +1549,8 @@ export default function OrdersView() {
               filtered.map((order, index) => {
                 const cName = order?.customerName || (order?.customerDetails ? `${order.customerDetails.firstName || ''} ${order.customerDetails.lastName || ''}`.trim() : '') || 'Customer';
                 const cPhone = order?.phone || order?.customerDetails?.phone || '';
-                const rawGov = order?.governorate || order?.customerDetails?.governorate || order?.customerDetails?.governorateName || order?.customerDetails?.city || '';
-                const cCity = typeof rawGov === 'string' && rawGov.trim()
-                  ? getGovernorateName(rawGov.trim(), isArabic)
-                  : (typeof rawGov === 'object' && rawGov !== null ? getGovernorateName(rawGov, isArabic) : (typeof rawGov === 'string' ? rawGov : ''));
+                const rawGov = order?.customerDetails?.governorate || order?.customerDetails?.governorateName || order?.governorate || order?.customerDetails?.city || '';
+                const cCity = safeResolveGovernorate(order, isArabic) || (typeof rawGov === 'string' && rawGov.trim() ? getGovernorateName(rawGov.trim(), isArabic) : '');
                 const cAddress = typeof order?.address === 'string'
                   ? order.address
                   : (typeof order?.customerDetails?.address === 'string' ? order.customerDetails.address : '');

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useStore, normalizePhone } from '../store/useStore';
 import { translations } from '../translations';
-import { getGovernorateName } from '../utils/governorates';
+import { getGovernorateName, safeResolveGovernorate } from '../utils/governorates';
 import ThermalShippingLabelModal from './ThermalShippingLabelModal';
 import OrderInvoiceModal from './OrderInvoiceModal';
 
@@ -24,6 +24,7 @@ export default function CustomersView() {
     language
   } = useStore();
   const t = translations[language];
+  const isArabic = language === 'ar';
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('ALL'); // 'ALL' | 'VIP' | 'RELIABLE' | 'AT_RISK' | 'BLACKLISTED'
@@ -54,12 +55,7 @@ export default function CustomersView() {
           phone: rawPhone,
           cleanPhone,
           fullName: order.customerName || (order.customerDetails ? `${order.customerDetails.firstName || ''} ${order.customerDetails.lastName || ''}`.trim() : 'Customer'),
-          governorate: (() => {
-            const raw = order?.governorate || order?.customerDetails?.governorate || order?.customerDetails?.governorateName || order?.customerDetails?.city || '';
-            return typeof raw === 'string' && raw.trim()
-              ? getGovernorateName(raw.trim(), language === 'ar')
-              : (typeof raw === 'object' && raw !== null ? getGovernorateName(raw, language === 'ar') : (typeof raw === 'string' ? raw : 'N/A'));
-          })(),
+          governorate: safeResolveGovernorate(order, isArabic) || 'N/A',
           defaultAddress: typeof order?.address === 'string' ? order.address : (typeof order?.customerDetails?.address === 'string' ? order.customerDetails.address : ''),
           orders: [],
           totalOrdersCount: 0,
@@ -86,11 +82,8 @@ export default function CustomersView() {
         c.latestOrderDate = order.createdAt;
         // Keep most recent customer name and address updated
         if (order.customerName) c.fullName = order.customerName;
-        if (order.governorate) {
-          const raw = order.governorate;
-          c.governorate = typeof raw === 'string' && raw.trim()
-            ? getGovernorateName(raw.trim(), language === 'ar')
-            : (typeof raw === 'object' && raw !== null ? getGovernorateName(raw, language === 'ar') : String(raw || 'N/A'));
+        if (order.governorate || order.customerDetails?.governorate) {
+          c.governorate = safeResolveGovernorate(order, isArabic) || 'N/A';
         }
         if (order.address) c.defaultAddress = typeof order.address === 'string' ? order.address : '';
       }

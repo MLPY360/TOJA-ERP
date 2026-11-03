@@ -4,10 +4,12 @@ import { X, Download, Calendar, Tag } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
+import { safeResolveGovernorate } from '../utils/governorates';
 
 export default function ExportOrdersModal({ isOpen, onClose }) {
   const { orders, products, language } = useStore();
   const t = translations[language];
+  const isArabic = language === 'ar';
 
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -56,7 +58,7 @@ export default function ExportOrdersModal({ isOpen, onClose }) {
           "Dispatched By": order.dispatchedBy || 'N/A',
           "Customer Name": typeof order.customerName === 'string' ? order.customerName : (order.customerDetails ? `${order.customerDetails.firstName || ''} ${order.customerDetails.lastName || ''}`.trim() : 'Customer'),
           "Customer Phone": order.phone || order.customerDetails?.phone || '',
-          "Address": `${typeof order.governorate === 'string' ? order.governorate : (order.customerDetails?.governorate || '')} - ${typeof order.address === 'string' ? order.address : (order.customerDetails?.address || '')}`,
+          "Address": `${safeResolveGovernorate(order, isArabic)} - ${typeof order.address === 'string' ? order.address : (order.customerDetails?.address || '')}`,
           "Product Name": product ? product.name : 'Unknown Product',
           "Size": item.size,
           "Quantity": item.qty,
