@@ -38,6 +38,7 @@ import OrderInvoiceModal from './OrderInvoiceModal';
 import ThermalShippingLabelModal from './ThermalShippingLabelModal';
 import ImageLightbox from './ImageLightbox';
 import { getSafeProductImage, handleImageError } from '../utils/imageUtils';
+import { getGovernorateName } from '../utils/governorates';
 
 const getStatusBadge = (status) => {
   switch (status) {
@@ -376,11 +377,16 @@ function WhatsAppModal({ isOpen, onClose, order, language }) {
     setIsAiGenerating(true);
     setShowAiSection(true);
     try {
-      const cName = order.customerName || order.customerDetails?.firstName || 'العميل';
+      const cName = order?.customerName || order?.customerDetails?.firstName || 'العميل';
+      const rawGovSummary = order?.governorate || order?.customerDetails?.governorate || order?.customerDetails?.governorateName || order?.customerDetails?.city || '';
+      const safeGovSummary = typeof rawGovSummary === 'string' && rawGovSummary.trim()
+        ? getGovernorateName(rawGovSummary.trim(), isAr)
+        : (typeof rawGovSummary === 'object' && rawGovSummary !== null ? getGovernorateName(rawGovSummary, isAr) : (typeof rawGovSummary === 'string' ? rawGovSummary : ''));
+
       const orderSummary = {
         orderId: order.orderId || order.customId || order.id,
         status: order.status,
-        governorate: order.governorate,
+        governorate: safeGovSummary,
         items: (order.items || []).map(i => ({
           name: i.name || i.productName || 'منتج',
           size: i.size,
@@ -1165,10 +1171,15 @@ export default function OrdersView() {
           </div>
         ) : (
           filtered.map((order, index) => {
-            const cName = order.customerName || (order.customerDetails ? `${order.customerDetails.firstName} ${order.customerDetails.lastName}` : 'Unknown');
-            const cPhone = order.phone || order.customerDetails?.phone || '';
-            const cCity = order.governorate || order.customerDetails?.city || '';
-            const cAddress = order.address || order.customerDetails?.address || '';
+            const cName = order?.customerName || (order?.customerDetails ? `${order.customerDetails.firstName || ''} ${order.customerDetails.lastName || ''}`.trim() : '') || 'Customer';
+            const cPhone = order?.phone || order?.customerDetails?.phone || '';
+            const rawGov = order?.governorate || order?.customerDetails?.governorate || order?.customerDetails?.governorateName || order?.customerDetails?.city || '';
+            const cCity = typeof rawGov === 'string' && rawGov.trim()
+              ? getGovernorateName(rawGov.trim(), isArabic)
+              : (typeof rawGov === 'object' && rawGov !== null ? getGovernorateName(rawGov, isArabic) : (typeof rawGov === 'string' ? rawGov : ''));
+            const cAddress = typeof order?.address === 'string'
+              ? order.address
+              : (typeof order?.customerDetails?.address === 'string' ? order.customerDetails.address : '');
             const cTotal = order.totalAmount || order.total || order.totals?.total || order.totals?.grandTotal || 0;
             const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
             const cShipping = order.shippingFee ?? order.totals?.shipping ?? 0;
@@ -1280,7 +1291,7 @@ export default function OrdersView() {
                   </div>
                   {(cCity || cAddress) && (
                     <p className="text-[11px] text-slate-500 font-medium">
-                      {cCity}{cCity && cAddress ? ' - ' : ''}{cAddress}
+                      {typeof cCity === 'string' ? cCity : ''}{cCity && cAddress ? ' - ' : ''}{typeof cAddress === 'string' ? cAddress : ''}
                     </p>
                   )}
                   {order.parentOrderDisplayId && (
@@ -1534,10 +1545,15 @@ export default function OrdersView() {
               </tr>
             ) : (
               filtered.map((order, index) => {
-                const cName = order.customerName || (order.customerDetails ? `${order.customerDetails.firstName} ${order.customerDetails.lastName}` : 'Unknown');
-                const cPhone = order.phone || order.customerDetails?.phone || '';
-                const cCity = order.governorate || order.customerDetails?.city || 'Unknown';
-                const cAddress = order.address || order.customerDetails?.address || '';
+                const cName = order?.customerName || (order?.customerDetails ? `${order.customerDetails.firstName || ''} ${order.customerDetails.lastName || ''}`.trim() : '') || 'Customer';
+                const cPhone = order?.phone || order?.customerDetails?.phone || '';
+                const rawGov = order?.governorate || order?.customerDetails?.governorate || order?.customerDetails?.governorateName || order?.customerDetails?.city || '';
+                const cCity = typeof rawGov === 'string' && rawGov.trim()
+                  ? getGovernorateName(rawGov.trim(), isArabic)
+                  : (typeof rawGov === 'object' && rawGov !== null ? getGovernorateName(rawGov, isArabic) : (typeof rawGov === 'string' ? rawGov : ''));
+                const cAddress = typeof order?.address === 'string'
+                  ? order.address
+                  : (typeof order?.customerDetails?.address === 'string' ? order.customerDetails.address : '');
                 const cTotal = order.totalAmount || order.total || order.totals?.total || order.totals?.grandTotal || 0;
                 const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
                 const cShipping = order.shippingFee ?? order.totals?.shipping ?? 0;
@@ -1612,8 +1628,8 @@ export default function OrdersView() {
                       </td>
 
                       <td className="p-4 align-middle text-start hidden md:table-cell">
-                        <p className="font-semibold text-slate-700">{cCity}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={cAddress}>{cAddress}</p>
+                        <p className="font-semibold text-slate-700">{typeof cCity === 'string' ? cCity : ''}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={typeof cAddress === 'string' ? cAddress : ''}>{typeof cAddress === 'string' ? cAddress : ''}</p>
                         {order.parentOrderDisplayId && (
                           <span className="text-[10px] text-purple-700 font-bold block mt-0.5">
                             {t.linkedToOrder}: #{order.parentOrderDisplayId}

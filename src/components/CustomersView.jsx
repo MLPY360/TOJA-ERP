@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useStore, normalizePhone } from '../store/useStore';
 import { translations } from '../translations';
+import { getGovernorateName } from '../utils/governorates';
 import ThermalShippingLabelModal from './ThermalShippingLabelModal';
 import OrderInvoiceModal from './OrderInvoiceModal';
 
@@ -53,8 +54,13 @@ export default function CustomersView() {
           phone: rawPhone,
           cleanPhone,
           fullName: order.customerName || (order.customerDetails ? `${order.customerDetails.firstName || ''} ${order.customerDetails.lastName || ''}`.trim() : 'Customer'),
-          governorate: order.governorate || order.customerDetails?.governorate || 'N/A',
-          defaultAddress: order.address || order.customerDetails?.address || '',
+          governorate: (() => {
+            const raw = order?.governorate || order?.customerDetails?.governorate || order?.customerDetails?.governorateName || order?.customerDetails?.city || '';
+            return typeof raw === 'string' && raw.trim()
+              ? getGovernorateName(raw.trim(), language === 'ar')
+              : (typeof raw === 'object' && raw !== null ? getGovernorateName(raw, language === 'ar') : (typeof raw === 'string' ? raw : 'N/A'));
+          })(),
+          defaultAddress: typeof order?.address === 'string' ? order.address : (typeof order?.customerDetails?.address === 'string' ? order.customerDetails.address : ''),
           orders: [],
           totalOrdersCount: 0,
           deliveredOrdersCount: 0,
@@ -80,8 +86,13 @@ export default function CustomersView() {
         c.latestOrderDate = order.createdAt;
         // Keep most recent customer name and address updated
         if (order.customerName) c.fullName = order.customerName;
-        if (order.governorate) c.governorate = order.governorate;
-        if (order.address) c.defaultAddress = order.address;
+        if (order.governorate) {
+          const raw = order.governorate;
+          c.governorate = typeof raw === 'string' && raw.trim()
+            ? getGovernorateName(raw.trim(), language === 'ar')
+            : (typeof raw === 'object' && raw !== null ? getGovernorateName(raw, language === 'ar') : String(raw || 'N/A'));
+        }
+        if (order.address) c.defaultAddress = typeof order.address === 'string' ? order.address : '';
       }
 
       const isDelivered = order.status === 'Delivered - Collected' || order.status === 'Delivered' || order.status === 'Delivered - Pending Cash';
@@ -146,10 +157,10 @@ export default function CustomersView() {
     return customersList.filter(c => {
       const q = searchQuery.toLowerCase();
       const matchesSearch = !q ||
-        c.fullName.toLowerCase().includes(q) ||
-        c.phone.includes(q) ||
-        c.cleanPhone.includes(q) ||
-        c.governorate.toLowerCase().includes(q);
+        (typeof c.fullName === 'string' && c.fullName.toLowerCase().includes(q)) ||
+        (typeof c.phone === 'string' && c.phone.includes(q)) ||
+        (typeof c.cleanPhone === 'string' && c.cleanPhone.includes(q)) ||
+        (typeof c.governorate === 'string' && c.governorate.toLowerCase().includes(q));
 
       const matchesFilter = filterType === 'ALL' || c.badge === filterType;
       return matchesSearch && matchesFilter;

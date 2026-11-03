@@ -5,6 +5,7 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, on
 import { logger } from '../utils/logger'
 import { SUPER_ADMIN_EMAILS, isSuperAdmin, isPartnerStaff, isAuthorizedStaff, PARTNER_STAFF_EMAILS } from '../utils/authConfig'
 import { translations } from '../translations'
+import { getGovernorateName } from '../utils/governorates'
 
 export { SUPER_ADMIN_EMAILS, isSuperAdmin, isPartnerStaff, isAuthorizedStaff, PARTNER_STAFF_EMAILS, translations }
 
@@ -452,7 +453,29 @@ export const useStore = create((set, get) => ({
     });
 
     onSnapshot(query(collection(db, "orders"), orderBy("createdAt", "desc")), (snapshot) => {
-      const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const allOrders = snapshot.docs.map(doc => {
+        const d = doc.data() || {};
+        const rawGov =
+          d?.governorate ||
+          d?.customerDetails?.governorate ||
+          d?.customerDetails?.governorateName ||
+          d?.customerDetails?.city ||
+          '';
+
+        const normalizedGov = typeof rawGov === 'string' && rawGov.trim()
+          ? getGovernorateName(rawGov.trim(), true)
+          : (typeof rawGov === 'object' && rawGov !== null ? getGovernorateName(rawGov, true) : '');
+
+        const safeGov = typeof normalizedGov === 'string' && normalizedGov
+          ? normalizedGov
+          : (typeof rawGov === 'string' ? rawGov : '');
+
+        return {
+          id: doc.id,
+          ...d,
+          governorate: safeGov
+        };
+      });
       const orders = allOrders.filter(o => !o.isDeleted);
       const deletedOrders = allOrders.filter(o => !!o.isDeleted);
       set({ orders, deletedOrders });

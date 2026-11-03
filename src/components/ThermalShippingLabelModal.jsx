@@ -149,7 +149,7 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
                     {t.shipTo}
                   </div>
                   <div className="border-2 border-black px-2 py-0.5 font-black text-xs uppercase tracking-wider bg-slate-100">
-                    📍 {order.governorate || 'GIZA'}
+                    📍 {typeof order.governorate === 'string' && order.governorate.trim() ? order.governorate : (typeof order.customerDetails?.governorate === 'string' ? order.customerDetails.governorate : 'GIZA')}
                   </div>
                 </div>
 

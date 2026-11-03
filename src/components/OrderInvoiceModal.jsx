@@ -4,6 +4,7 @@ import { X, Printer, Tag, Phone, MapPin, Calendar, User, Package, ShieldCheck, B
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
 import { isOrderPaidOnline, getOrderPaymentInfo } from '../utils/paymentUtils';
+import { getGovernorateName } from '../utils/governorates';
 
 export default function OrderInvoiceModal({ isOpen, onClose, order }) {
   const { products, language } = useStore();
@@ -12,10 +13,15 @@ export default function OrderInvoiceModal({ isOpen, onClose, order }) {
   if (!isOpen || !order) return null;
 
   const displayId = order.orderId || order.orderNumber || order.customId || order.order_id || order.displayId || order.id;
-  const cName = order.customerName || (order.customerDetails ? `${order.customerDetails.firstName} ${order.customerDetails.lastName}` : 'Unknown');
-  const cPhone = order.phone || order.customerDetails?.phone || '';
-  const cCity = order.governorate || order.customerDetails?.city || '';
-  const cAddress = order.address || order.customerDetails?.address || '';
+  const cName = order?.customerName || (order?.customerDetails ? `${order.customerDetails.firstName || ''} ${order.customerDetails.lastName || ''}`.trim() : '') || 'Customer';
+  const cPhone = order?.phone || order?.customerDetails?.phone || '';
+  const rawGov = order?.governorate || order?.customerDetails?.governorate || order?.customerDetails?.governorateName || order?.customerDetails?.city || '';
+  const cCity = typeof rawGov === 'string' && rawGov.trim()
+    ? getGovernorateName(rawGov.trim(), language === 'ar')
+    : (typeof rawGov === 'object' && rawGov !== null ? getGovernorateName(rawGov, language === 'ar') : (typeof rawGov === 'string' ? rawGov : ''));
+  const cAddress = typeof order?.address === 'string'
+    ? order.address
+    : (typeof order?.customerDetails?.address === 'string' ? order.customerDetails.address : '');
   const cShipping = Number(order.shippingFee ?? order.totals?.shipping ?? 0);
   const cSubtotal = Number(order.subtotal ?? order.totals?.subtotal ?? 0);
   const cTotal = Number(order.totalAmount || order.total || order.totals?.total || order.totals?.grandTotal || 0);
