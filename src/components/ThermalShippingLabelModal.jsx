@@ -1,14 +1,14 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
-import { X, Printer, Package, MapPin, Phone, User, CheckCircle, ShieldCheck } from 'lucide-react';
+import { X, Printer, ShieldCheck } from 'lucide-react';
 import { translations } from '../translations';
 import { useStore } from '../store/useStore';
 import { isOrderPaidOnline } from '../utils/paymentUtils';
-import { safeResolveGovernorate } from '../utils/governorates';
+import { safeResolveGovernorate, getGovernorateName } from '../utils/governorates';
 
 export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
   const { language } = useStore();
-  const t = translations[language];
+  const t = translations[language] || {};
   const isArabic = language === 'ar';
 
   if (!isOpen || !order) return null;
@@ -26,16 +26,52 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
   const printedDate = order.orderDate || (order.createdAt ? (typeof order.createdAt === 'string' ? order.createdAt.slice(0, 10) : new Date(order.createdAt).toISOString().slice(0, 10)) : new Date().toISOString().slice(0, 10));
   const isPaidOnline = isOrderPaidOnline(order);
 
-  // Visual Barcode generator
+  // 1. Customer Safe Property Resolution
+  const customerName =
+    (order?.customerDetails?.firstName
+      ? `${order.customerDetails.firstName} ${order.customerDetails.lastName || ''}`.trim()
+      : null) ||
+    order?.customerDetails?.name ||
+    order?.customerName ||
+    order?.name ||
+    (isArabic ? 'عميل توجا' : 'TOJA Customer');
+
+  const customerPhone =
+    order?.customerDetails?.phone ||
+    order?.customerPhone ||
+    order?.phone ||
+    (isArabic ? 'غير محدد' : 'Unspecified');
+
+  const customerAddress =
+    order?.customerDetails?.address ||
+    order?.shippingAddress ||
+    order?.address ||
+    (isArabic ? 'العنوان غير مسجل' : 'Address not specified');
+
+  // 2. Dynamic Governorate Resolution (Strictly dynamic, no hardcoding)
+  const rawGov =
+    order?.customerDetails?.governorate ||
+    order?.customerDetails?.governorateName ||
+    order?.governorate ||
+    order?.customerDetails?.city ||
+    '';
+  const govEn = safeResolveGovernorate(order, false) || (typeof rawGov === 'string' && rawGov.trim() ? getGovernorateName(rawGov.trim(), false) : '');
+  const govAr = safeResolveGovernorate(order, true) || (typeof rawGov === 'string' && rawGov.trim() ? getGovernorateName(rawGov.trim(), true) : '');
+  const governorateDisplay = (govEn || (typeof rawGov === 'string' && rawGov.trim() ? rawGov.trim() : '') || govAr || 'CAIRO / GIZA').toUpperCase();
+
+  // High-density Code 128 simulated bar sequence with variable widths
   const renderBarcodeBars = () => {
-    const pattern = [2, 1, 3, 1, 2, 4, 1, 2, 3, 1, 1, 3, 2, 1, 4, 1, 2, 1, 3, 2, 1, 4, 2, 1, 3, 1, 2, 1, 4, 2];
+    const pattern = [
+      2, 1, 3, 1, 1, 4, 2, 1, 2, 3, 1, 1, 3, 2, 1, 4, 1, 2, 1, 3,
+      2, 1, 4, 2, 1, 3, 1, 2, 1, 4, 2, 1, 3, 2, 1, 1, 4, 1, 2, 3, 1, 2
+    ];
     return (
-      <div className="flex items-stretch justify-center h-12 gap-[2px] my-1 overflow-hidden px-4">
+      <div className="flex items-stretch justify-center h-12 gap-[2px] my-1.5 overflow-hidden px-2 bg-white">
         {pattern.map((width, idx) => (
           <div
             key={idx}
-            className="bg-black"
-            style={{ width: `${width * 2}px` }}
+            className="bg-black shrink-0"
+            style={{ width: `${Math.max(1, width * 1.8)}px` }}
           />
         ))}
       </div>
@@ -44,9 +80,22 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm overflow-y-auto">
-      {/* Print Stylesheet */}
+      {/* 4x6 Printable Standard Thermal Stylesheet */}
       <style>{`
+        @page {
+          size: 4in 6in;
+          margin: 0mm;
+        }
         @media print {
+          html, body {
+            width: 4in !important;
+            height: 6in !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
           body * {
             visibility: hidden !important;
           }
@@ -57,19 +106,28 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
             position: fixed !important;
             left: 0 !important;
             top: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
+            width: 4in !important;
+            height: 6in !important;
+            max-width: 4in !important;
+            max-height: 6in !important;
             margin: 0 !important;
-            padding: 12px !important;
+            padding: 5mm !important;
+            box-sizing: border-box !important;
             background: #ffffff !important;
             color: #000000 !important;
             box-shadow: none !important;
-            border: 2px solid #000 !important;
-            z-index: 99999 !important;
+            border: 2px solid #000000 !important;
+            border-radius: 0 !important;
+            page-break-after: avoid !important;
+            page-break-inside: avoid !important;
+            overflow: hidden !important;
+            z-index: 999999 !important;
           }
-          @page {
-            size: 4in 6in;
-            margin: 0;
+          .print-force-white {
+            color: #ffffff !important;
+          }
+          .print-force-black {
+            color: #000000 !important;
           }
         }
       `}</style>
@@ -84,19 +142,19 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
         <div className="p-4 bg-white border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2 text-slate-800">
             <Printer size={18} className="text-[#597867]" />
-            <span className="font-extrabold text-sm">{t.thermalShippingLabel} (4×6")</span>
+            <span className="font-extrabold text-sm">{t.thermalShippingLabel || 'Thermal Shipping Label'} (4×6")</span>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrint}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#597867] hover:bg-[#465f52] text-white text-xs font-bold shadow-sm transition-colors"
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#597867] hover:bg-[#465f52] text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
             >
               <Printer size={14} />
-              <span>{t.printThermal}</span>
+              <span>{t.printThermal || 'Print Label'}</span>
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <X size={18} />
             </button>
@@ -107,66 +165,68 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
         <div className="p-6 flex justify-center bg-slate-200/70 overflow-y-auto max-h-[80vh]">
           <div
             id="thermal-label-print"
-            className="w-[380px] bg-white text-black p-4 border-2 border-black rounded-lg shadow-md font-sans text-xs flex flex-col justify-between"
-            style={{ minHeight: '540px' }}
+            className="w-[380px] bg-white text-black p-4 border-2 border-black rounded-none shadow-md font-sans text-xs flex flex-col justify-between"
+            style={{ minHeight: '550px' }}
           >
-            {/* Header: Brand & Return Info */}
+            {/* Top Section */}
             <div>
+              {/* Header: Brand & Return Info */}
               <div className="flex items-center justify-between border-b-2 border-black pb-2">
                 <div>
-                  <h1 className="text-xl font-black tracking-wider uppercase font-mono">TOJA</h1>
-                  <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">Premium Egyptian Apparel</p>
+                  <h1 className="text-2xl font-black tracking-wider uppercase font-mono leading-none">TOJA</h1>
+                  <p className="text-[9px] font-extrabold text-black uppercase tracking-widest mt-0.5">Premium Egyptian Apparel</p>
                 </div>
-                <div className="text-right text-[9px] leading-tight">
-                  <p className="font-black uppercase tracking-wider">{t.senderReturnAddress}</p>
-                  <p className="font-semibold">Cairo / Giza, Egypt</p>
-                  <p className="font-mono font-bold">Tel: 01000000000</p>
+                <div className="text-right text-[9px] leading-tight text-black">
+                  <p className="font-black uppercase tracking-wider">{t.senderReturnAddress || 'RETURN TO / عنوان الراسل'}</p>
+                  <p className="font-bold">TOJA Fulfillment Hub</p>
+                  <p className="font-semibold text-slate-700">Cairo / Giza, Egypt</p>
+                  <p className="font-mono font-black text-black">Tel: +20 121 411 2337</p>
                 </div>
               </div>
 
               {/* Carrier & Barcode Block */}
               <div className="my-2 border-b-2 border-black pb-2 text-center">
-                <div className="flex items-center justify-between px-1 text-[10px] font-extrabold uppercase">
+                <div className="flex items-center justify-between px-1 text-[10px] font-black uppercase text-black">
                   <span>Carrier: {carrier}</span>
                   <span className="font-mono">{printedDate}</span>
                 </div>
 
                 {renderBarcodeBars()}
 
-                <div className="flex justify-between items-center px-2 font-mono text-[11px] font-black">
+                <div className="flex justify-between items-center px-1 font-mono text-[11px] font-black text-black">
                   <span>*{displayId}*</span>
                   <span>TRK: {trackingNumber}</span>
                 </div>
                 {order.dispatchedBy && (
-                  <div className="mt-1 text-[9px] font-mono font-bold uppercase text-slate-700">
+                  <div className="mt-1 text-[9px] font-mono font-bold uppercase text-black">
                     {t.dispatchedBy || 'Dispatched by'}: {order.dispatchedBy}
                   </div>
                 )}
               </div>
 
               {/* Consignee / Recipient Block */}
-              <div className="border-b-2 border-black pb-3 pt-1">
+              <div className="border-b-2 border-black pb-2.5 pt-1 text-start">
                 <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <div className="text-[10px] font-black uppercase tracking-wider bg-black text-white px-1.5 py-0.5 rounded">
-                    {t.shipTo}
+                  <div className="text-[10px] font-black uppercase tracking-wider bg-black text-white px-2 py-0.5 rounded-sm">
+                    {t.shipTo || 'SHIP TO / تسليم إلى'}
                   </div>
-                  <div className="border-2 border-black px-2 py-0.5 font-black text-xs uppercase tracking-wider bg-slate-100">
-                    📍 {safeResolveGovernorate(order, isArabic) || 'GIZA'}
+                  <div className="border-2 border-black px-2 py-0.5 font-black text-xs uppercase tracking-wider bg-black text-white rounded-sm">
+                    📍 {governorateDisplay} {govAr && govAr !== governorateDisplay ? `• ${govAr}` : ''}
                   </div>
                 </div>
 
-                <div className="space-y-1 mt-2">
-                  <p className="text-base font-black uppercase text-black leading-tight">
-                    {order.customerName || 'Customer'}
+                <div className="space-y-1 mt-1.5">
+                  <p className="text-base font-black text-black leading-tight">
+                    {customerName}
                   </p>
                   <p className="text-sm font-extrabold font-mono text-black">
-                    📞 {order.phone}
+                    📞 {customerPhone}
                   </p>
-                  <p className="text-[11px] font-bold text-slate-800 leading-snug">
-                    {order.address || 'Address details not specified'}
+                  <p className="text-[11px] font-bold text-black leading-snug">
+                    {customerAddress}
                   </p>
                   {order.notes && order.notes.length > 0 && (
-                    <div className="mt-1 p-1 bg-slate-100 border border-black text-[10px] font-bold">
+                    <div className="mt-1 p-1 bg-slate-100 border border-black text-[10px] font-bold text-black">
                       Note: {order.notes[order.notes.length - 1]?.text || order.notes[0]?.text}
                     </div>
                   )}
@@ -174,35 +234,40 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
               </div>
 
               {/* Packing Slip Items */}
-              <div className="py-2 border-b-2 border-black">
-                <div className="flex justify-between items-center text-[10px] font-black uppercase mb-1">
-                  <span>{t.packingSlip}</span>
+              <div className="py-2 border-b-2 border-black text-start">
+                <div className="flex justify-between items-center text-[10px] font-black uppercase mb-1 text-black">
+                  <span>{t.packingSlip || 'PACKING SLIP / محتويات الشحنة'}</span>
                   <span>{totalPieces} {totalPieces === 1 ? 'Piece' : 'Pieces'}</span>
                 </div>
                 <table className="w-full text-start border-collapse text-[10px]">
                   <thead>
-                    <tr className="border-b border-black text-slate-600">
+                    <tr className="border-b border-black text-black">
                       <th className="py-0.5 text-start font-black">Item</th>
                       <th className="py-0.5 text-center font-black">Size</th>
                       <th className="py-0.5 text-end font-black">Qty</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((item, idx) => (
-                      <tr key={idx} className="border-b border-dashed border-slate-300">
-                        <td className="py-1 text-start font-bold truncate max-w-[200px]">
-                          {item.productName || 'Garment'}
+                    {items.slice(0, 5).map((item, idx) => (
+                      <tr key={idx} className="border-b border-dashed border-slate-400">
+                        <td className="py-1 text-start font-bold truncate max-w-[190px] text-black">
+                          {item.name || item.productName || 'TOJA Garment'}
                         </td>
-                        <td className="py-1 text-center font-black text-xs">
-                          {item.size}
+                        <td className="py-1 text-center font-black text-xs font-mono text-black">
+                          {item.size || 'STD'}
                         </td>
-                        <td className="py-1 text-end font-mono font-extrabold">
+                        <td className="py-1 text-end font-mono font-extrabold text-black">
                           x{item.qty || item.quantity || 1}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                {items.length > 5 && (
+                  <p className="text-[9px] font-bold text-center mt-1 text-black font-mono">
+                    + {items.length - 5} more item(s) on invoice
+                  </p>
+                )}
               </div>
             </div>
 
@@ -210,41 +275,43 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
             <div className="pt-2">
               {/* High Contrast COD / PAID ONLINE Box */}
               {isPaidOnline ? (
-                <div className="border-4 border-black p-2 text-center bg-black text-white rounded">
-                  <div className="flex items-center justify-center gap-1 text-[11px] font-black uppercase tracking-widest text-[#00FF66]">
-                    <ShieldCheck size={14} className="text-[#00FF66]" />
+                <div className="border-4 border-black p-2 text-center bg-black text-white rounded-none">
+                  <div className="flex items-center justify-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-[#00FF66] print-force-white">
+                    <ShieldCheck size={14} className="text-[#00FF66] print-force-white" />
                     <span>PAID ONLINE • مدفوع مسبقاً بالفيزا</span>
                   </div>
-                  <p className="text-2xl font-black tracking-tight font-mono my-0.5 text-[#00FF66]">
+                  <p className="text-xl font-black tracking-tight font-mono my-0.5 text-[#00FF66] print-force-white">
                     COLLECT 0 EGP / تحصيل 0 ج.م
                   </p>
-                  <p className="text-[9px] font-black text-white uppercase tracking-wider">
+                  <p className="text-[9px] font-black uppercase tracking-wider text-white">
                     DO NOT COLLECT CASH • لا يتم تحصيل أي مبالغ من العميل
                   </p>
                 </div>
               ) : (
-                <div className="border-4 border-black p-2.5 text-center bg-black text-white rounded">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-200">
-                    {t.cashOnDeliveryAmount}
+                <div className="border-4 border-black p-2 text-center bg-black text-white rounded-none">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-200 print-force-white">
+                    {t.cashOnDeliveryAmount || 'CASH ON DELIVERY (COD)'}
                   </p>
-                  <p className="text-2xl font-black tracking-tight font-mono my-0.5">
+                  <p className="text-2xl font-black tracking-tight font-mono my-0.5 text-white">
                     {orderTotal.toLocaleString('en-EG')} EGP
                   </p>
-                  <p className="text-[9px] font-bold text-slate-300">
-                    (Shipping & Taxes Included)
+                  <p className="text-[9px] font-bold text-slate-300 print-force-white">
+                    (شامل مصاريف الشحن والضريبة • Shipping & Taxes Included)
                   </p>
                 </div>
               )}
 
               {/* Customer Notice Footer */}
-              <div className="mt-2 text-center text-[9px] font-extrabold text-slate-700 leading-tight">
+              <div className="mt-2 text-center text-[9px] font-extrabold text-black leading-tight">
                 {order.dispatchedBy && (
                   <p className="font-mono font-black text-black uppercase mb-0.5">
                     {t.dispatchedBy || 'Dispatched by'}: {order.dispatchedBy}
                   </p>
                 )}
-                <p>{t.inspectionAllowed}</p>
-                <p className="mt-0.5 text-[8px] font-mono text-slate-400 uppercase">Printed via TOJA ERP System</p>
+                <p className="border border-black bg-slate-100 py-0.5 px-1 font-bold">
+                  {t.inspectionAllowed || 'مسموح بالمعاينة قبل الاستلام والدفع • Inspection Allowed Before Payment'}
+                </p>
+                <p className="mt-0.5 text-[8px] font-mono text-slate-600 uppercase">Printed via TOJA ERP System</p>
               </div>
             </div>
           </div>
@@ -254,16 +321,16 @@ export default function ThermalShippingLabelModal({ isOpen, onClose, order }) {
         <div className="p-4 bg-white border-t border-slate-200 flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+            className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             {t.close || 'Close'}
           </button>
           <button
             onClick={handlePrint}
-            className="flex items-center gap-2 px-5 py-2 rounded-xl bg-[#597867] hover:bg-[#465f52] text-white text-xs font-bold shadow-md transition-colors"
+            className="flex items-center gap-2 px-5 py-2 rounded-xl bg-[#597867] hover:bg-[#465f52] text-white text-xs font-bold shadow-md transition-colors cursor-pointer"
           >
             <Printer size={15} />
-            <span>{t.printShippingLabel}</span>
+            <span>{t.printShippingLabel || 'Print Label'}</span>
           </button>
         </div>
       </motion.div>
