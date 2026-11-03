@@ -299,23 +299,64 @@ export const STUDIO_GARMENT_SVG = generateStudioGarmentSvg('tee', 'white', 'TOJA
 export const DEFAULT_PRODUCT_IMAGE = STUDIO_GARMENT_SVG;
 
 /**
- * Checks whether an image URL is missing, invalid, or pointing to imgbb.com/ibb.co service unavailable domains.
+ * Checks whether an image URL is truly missing, invalid, or corrupted.
+ * Real photo URLs (including ImgBB, Firebase Storage, Cloudinary, etc.) are valid and prioritized.
  */
-export const isBrokenOrImgbbUrl = (url) => {
+export const isInvalidUrl = (url) => {
   if (!url || typeof url !== 'string') return true;
   const trimmed = url.trim();
   if (!trimmed) return true;
 
   const lower = trimmed.toLowerCase();
   return (
-    lower.includes('imgbb.com') ||
-    lower.includes('ibb.co') ||
     lower.includes('service-unavailable') ||
-    lower.includes('503') ||
     lower.includes('undefined') ||
     lower.includes('null') ||
-    lower === 'default'
+    lower === 'default' ||
+    lower === '[object object]'
   );
+};
+
+/**
+ * Backward compatibility alias for isInvalidUrl.
+ */
+export const isBrokenOrImgbbUrl = (url) => isInvalidUrl(url);
+
+/**
+ * Resolves the real original product photography URL across all common database schemas.
+ * Prioritizes actual photo links over any cartoon/mockup templates:
+ * item?.imageUrl || item?.image || item?.photoUrl || item?.images?.[0] || originalProduct?.imageUrl
+ */
+export const resolveProductImageUrl = (item, originalProduct = null) => {
+  if (!item && !originalProduct) return '';
+
+  const candidates = [
+    item?.imageUrl,
+    item?.image,
+    item?.photoUrl,
+    item?.photo,
+    Array.isArray(item?.images) ? item.images[0] : null,
+    item?.images?.front,
+    item?.thumbnail,
+    originalProduct?.imageUrl,
+    originalProduct?.image,
+    originalProduct?.photoUrl,
+    originalProduct?.photo,
+    Array.isArray(originalProduct?.images) ? originalProduct.images[0] : null,
+    originalProduct?.images?.front,
+    originalProduct?.thumbnail,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed && !isInvalidUrl(trimmed)) {
+        return trimmed;
+      }
+    }
+  }
+
+  return '';
 };
 
 /**
@@ -337,19 +378,35 @@ export const getStudioPlaceholderForProduct = (productOrName, category) => {
 
 /**
  * Returns a sanitized, working image URL.
- * Replaces any broken or expired imgbb links with the reliable clean studio placeholder.
+ * Prioritizes the real original product photography stored in Firestore/Storage.
+ * Only falls back to the clean studio placeholder if no real photo exists or if it fails.
  */
 export const getSafeProductImage = (url, fallback, productContext) => {
-  if (!isBrokenOrImgbbUrl(url)) {
-    return url.trim();
+  // 1. Direct valid photography URL passed
+  if (url && typeof url === 'string') {
+    const trimmed = url.trim();
+    if (trimmed && !isInvalidUrl(trimmed)) {
+      return trimmed;
+    }
   }
 
-  // If specific fallback passed and valid, use it
-  if (fallback && !isBrokenOrImgbbUrl(fallback)) {
-    return fallback;
+  // 2. Resolve real photo from productContext if available
+  if (productContext) {
+    const contextPhoto = resolveProductImageUrl(productContext);
+    if (contextPhoto) {
+      return contextPhoto;
+    }
   }
 
-  // Derive tailored studio garment placeholder
+  // 3. Fallback URL if valid
+  if (fallback && typeof fallback === 'string') {
+    const trimmedFallback = fallback.trim();
+    if (trimmedFallback && !isInvalidUrl(trimmedFallback)) {
+      return trimmedFallback;
+    }
+  }
+
+  // 4. Fall back to clean studio placeholder only when no real photo exists
   if (productContext) {
     return getStudioPlaceholderForProduct(productContext);
   }

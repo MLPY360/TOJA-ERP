@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
-import { handleImageError } from '../utils/imageUtils';
+import { handleImageError, resolveProductImageUrl } from '../utils/imageUtils';
 
 export default function ImageLightbox({ isOpen, imageUrl, onClose, alt, title }) {
   const { language } = useStore();
@@ -25,8 +25,10 @@ export default function ImageLightbox({ isOpen, imageUrl, onClose, alt, title })
 
   if (!isOpen || !imageUrl) return null;
 
-  const src = typeof imageUrl === 'string' ? imageUrl : imageUrl?.url || imageUrl?.src || imageUrl?.imageUrl || '';
-  const altText = alt || title || (typeof imageUrl === 'object' && (imageUrl?.title || imageUrl?.name)) || 'Product preview';
+  const src = typeof imageUrl === 'string'
+    ? imageUrl
+    : resolveProductImageUrl(imageUrl) || imageUrl?.imageUrl || imageUrl?.image || imageUrl?.photoUrl || imageUrl?.url || imageUrl?.src || '';
+  const altText = alt || title || (typeof imageUrl === 'object' && (imageUrl?.name || imageUrl?.nameAr || imageUrl?.title)) || 'Product photo';
 
   return (
     <AnimatePresence>

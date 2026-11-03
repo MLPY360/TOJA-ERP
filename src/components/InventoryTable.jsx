@@ -4,7 +4,7 @@ import { Plus, Minus, Search, PackageX, Trash2, Pencil, AlertTriangle, History, 
 import { useStore, getAvailableStock, getProductSizes, normalizeSize } from '../store/useStore';
 import { translations } from '../translations';
 import ImageLightbox from './ImageLightbox';
-import { getSafeProductImage, handleImageError } from '../utils/imageUtils';
+import { getSafeProductImage, handleImageError, resolveProductImageUrl } from '../utils/imageUtils';
 
 function formatEGP(amount) {
   return (amount || 0).toLocaleString('en-EG') + ' EGP';
@@ -560,19 +560,23 @@ export default function InventoryTable({ onEdit }) {
                   >
                     <td className="p-4 px-6 align-middle text-start">
                       <div className="flex items-center gap-3">
-                        {product.imageUrl ? (
-                          <img 
-                            src={getSafeProductImage(product.imageUrl, null, product)} 
-                            alt={product.name} 
-                            onError={(e) => handleImageError(e, null, product)}
-                            className="w-12 h-12 object-contain p-1 bg-slate-50 rounded-lg border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
-                            onClick={() => setLightboxImg(getSafeProductImage(product.imageUrl, null, product))}
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
-                            <PackageX size={20} className="text-slate-400" />
-                          </div>
-                        )}
+                        {(() => {
+                          const originalUrl = resolveProductImageUrl(product);
+                          const displayUrl = getSafeProductImage(originalUrl, null, product);
+                          return originalUrl || product?.imageUrl || product?.image ? (
+                            <img 
+                              src={displayUrl} 
+                              alt={product.name} 
+                              onError={(e) => handleImageError(e, null, product)}
+                              className="w-12 h-12 object-contain p-1 bg-slate-50 rounded-lg border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
+                              onClick={() => setLightboxImg(originalUrl || displayUrl)}
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                              <PackageX size={20} className="text-slate-400" />
+                            </div>
+                          );
+                        })()}
                         <div>
                           <p className="font-bold text-[#181E1C] truncate max-w-[150px] lg:max-w-[250px]" title={product.name}>
                             {language === 'ar' && product.nameAr ? product.nameAr : product.name}
@@ -761,19 +765,23 @@ export default function InventoryTable({ onEdit }) {
                 {/* Card Header */}
                 <div className="flex justify-between items-start gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    {product.imageUrl ? (
-                      <img 
-                        src={getSafeProductImage(product.imageUrl, null, product)} 
-                        alt={product.name} 
-                        onError={(e) => handleImageError(e, null, product)}
-                        className="w-12 h-12 rounded-full object-contain p-1 bg-slate-50 border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
-                        onClick={() => setLightboxImg(getSafeProductImage(product.imageUrl, null, product))} 
-                      />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
-                        <PackageX size={20} className="text-slate-400" />
-                      </div>
-                    )}
+                    {(() => {
+                      const originalUrl = resolveProductImageUrl(product);
+                      const displayUrl = getSafeProductImage(originalUrl, null, product);
+                      return originalUrl || product?.imageUrl || product?.image ? (
+                        <img 
+                          src={displayUrl} 
+                          alt={product.name} 
+                          onError={(e) => handleImageError(e, null, product)}
+                          className="w-12 h-12 rounded-full object-contain p-1 bg-slate-50 border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
+                          onClick={() => setLightboxImg(originalUrl || displayUrl)} 
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                          <PackageX size={20} className="text-slate-400" />
+                        </div>
+                      );
+                    })()}
                     <div className="min-w-0 flex-1">
                       <h3 className="font-bold text-[#181E1C] text-sm truncate">
                         {language === 'ar' && product.nameAr ? product.nameAr : product.name}

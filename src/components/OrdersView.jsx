@@ -37,7 +37,7 @@ import EditOrderModal from './EditOrderModal';
 import OrderInvoiceModal from './OrderInvoiceModal';
 import ThermalShippingLabelModal from './ThermalShippingLabelModal';
 import ImageLightbox from './ImageLightbox';
-import { getSafeProductImage, handleImageError } from '../utils/imageUtils';
+import { getSafeProductImage, handleImageError, resolveProductImageUrl } from '../utils/imageUtils';
 import { getGovernorateName, safeResolveGovernorate } from '../utils/governorates';
 
 const getStatusBadge = (status) => {
@@ -1310,17 +1310,19 @@ export default function OrdersView() {
                   </span>
                   <div className="flex flex-col gap-1.5">
                     {order.items?.map((item, i) => {
-                      const product = products.find(p => p.id === item.productId) || item;
-                      const img = product?.imageUrl || product?.image;
+                      const originalProduct = products.find(p => p.id === item.productId || p.id === item.id || p.customId === item.productId || p.sku === item.sku || p.name === item.name) || null;
+                      const product = originalProduct || item;
+                      const rawImg = resolveProductImageUrl(item, originalProduct);
+                      const displayImg = getSafeProductImage(rawImg, null, product);
                       return (
                         <div key={i} className="flex items-center gap-2.5 p-2 bg-slate-50/60 rounded-lg border border-slate-100">
-                          {img ? (
+                          {rawImg || product?.imageUrl || product?.image ? (
                             <img
-                              src={getSafeProductImage(img, null, product)}
+                              src={displayImg}
                               alt={product?.name}
                               onError={(e) => handleImageError(e, null, product)}
                               className="w-10 h-10 object-contain p-0.5 bg-slate-50 rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-                              onClick={() => setLightboxImg(getSafeProductImage(img, null, product))}
+                              onClick={() => setLightboxImg(rawImg || displayImg)}
                             />
                           ) : (
                             <div className="w-10 h-10 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
@@ -1640,16 +1642,19 @@ export default function OrdersView() {
                       <td className="p-4 align-middle text-start hidden md:table-cell">
                         <div className="flex flex-col gap-2">
                           {order.items?.map((item, i) => {
-                            const product = products.find(p => p.id === item.productId) || item;
+                            const originalProduct = products.find(p => p.id === item.productId || p.id === item.id || p.customId === item.productId || p.sku === item.sku || p.name === item.name) || null;
+                            const product = originalProduct || item;
+                            const rawImg = resolveProductImageUrl(item, originalProduct);
+                            const displayImg = getSafeProductImage(rawImg, null, product);
                             return (
                               <div key={i} className="flex items-center gap-2">
-                                {product?.imageUrl || product?.image ? (
+                                {rawImg || product?.imageUrl || product?.image ? (
                                   <img
-                                    src={getSafeProductImage(product?.imageUrl || product?.image, null, product)}
+                                    src={displayImg}
                                     alt={product?.name}
                                     onError={(e) => handleImageError(e, null, product)}
                                     className="w-8 h-8 object-contain p-0.5 bg-slate-50 rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-                                    onClick={() => setLightboxImg(getSafeProductImage(product?.imageUrl || product?.image, null, product))}
+                                    onClick={() => setLightboxImg(rawImg || displayImg)}
                                   />
                                 ) : (
                                   <div className="w-8 h-8 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
