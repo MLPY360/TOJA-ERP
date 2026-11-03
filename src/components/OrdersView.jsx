@@ -37,6 +37,7 @@ import EditOrderModal from './EditOrderModal';
 import OrderInvoiceModal from './OrderInvoiceModal';
 import ThermalShippingLabelModal from './ThermalShippingLabelModal';
 import ImageLightbox from './ImageLightbox';
+import { getSafeProductImage, handleImageError } from '../utils/imageUtils';
 
 const getStatusBadge = (status) => {
   switch (status) {
@@ -1302,10 +1303,11 @@ export default function OrdersView() {
                         <div key={i} className="flex items-center gap-2.5 p-2 bg-slate-50/60 rounded-lg border border-slate-100">
                           {img ? (
                             <img
-                              src={img}
+                              src={getSafeProductImage(img, null, product)}
                               alt={product?.name}
-                              className="w-10 h-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-                              onClick={() => setLightboxImg(img)}
+                              onError={(e) => handleImageError(e, null, product)}
+                              className="w-10 h-10 object-contain p-0.5 bg-slate-50 rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => setLightboxImg(getSafeProductImage(img, null, product))}
                             />
                           ) : (
                             <div className="w-10 h-10 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
@@ -1627,10 +1629,11 @@ export default function OrdersView() {
                               <div key={i} className="flex items-center gap-2">
                                 {product?.imageUrl || product?.image ? (
                                   <img
-                                    src={product?.imageUrl || product?.image}
+                                    src={getSafeProductImage(product?.imageUrl || product?.image, null, product)}
                                     alt={product?.name}
-                                    className="w-8 h-8 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-                                    onClick={() => setLightboxImg(product?.imageUrl || product?.image)}
+                                    onError={(e) => handleImageError(e, null, product)}
+                                    className="w-8 h-8 object-contain p-0.5 bg-slate-50 rounded-md border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                                    onClick={() => setLightboxImg(getSafeProductImage(product?.imageUrl || product?.image, null, product))}
                                   />
                                 ) : (
                                   <div className="w-8 h-8 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">

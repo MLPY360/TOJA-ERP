@@ -4,6 +4,9 @@ import { Mail, Lock } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { translations } from '../translations';
 
+// Optional staging test password loaded strictly from local environment (.env)
+const STAGING_PARTNER_PASS = import.meta.env.VITE_STAGING_PARTNER_PASS || '';
+
 export default function LoginModal() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -104,7 +107,9 @@ export default function LoginModal() {
                 type="button"
                 onClick={() => {
                   setEmail(acc.email);
-                  if (!password) setPassword('toja2026!');
+                  if (STAGING_PARTNER_PASS && !password) {
+                    setPassword(STAGING_PARTNER_PASS);
+                  }
                   setError('');
                 }}
                 className="text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md transition-colors cursor-pointer"

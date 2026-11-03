@@ -4,6 +4,7 @@ import { Plus, Minus, Search, PackageX, Trash2, Pencil, AlertTriangle, History, 
 import { useStore, getAvailableStock, getProductSizes, normalizeSize } from '../store/useStore';
 import { translations } from '../translations';
 import ImageLightbox from './ImageLightbox';
+import { getSafeProductImage, handleImageError } from '../utils/imageUtils';
 
 function formatEGP(amount) {
   return (amount || 0).toLocaleString('en-EG') + ' EGP';
@@ -561,10 +562,11 @@ export default function InventoryTable({ onEdit }) {
                       <div className="flex items-center gap-3">
                         {product.imageUrl ? (
                           <img 
-                            src={product.imageUrl} 
+                            src={getSafeProductImage(product.imageUrl, null, product)} 
                             alt={product.name} 
-                            className="w-12 h-12 object-cover rounded-lg border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
-                            onClick={() => setLightboxImg(product.imageUrl)}
+                            onError={(e) => handleImageError(e, null, product)}
+                            className="w-12 h-12 object-contain p-1 bg-slate-50 rounded-lg border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
+                            onClick={() => setLightboxImg(getSafeProductImage(product.imageUrl, null, product))}
                           />
                         ) : (
                           <div className="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
@@ -761,10 +763,11 @@ export default function InventoryTable({ onEdit }) {
                   <div className="flex items-center gap-3 min-w-0">
                     {product.imageUrl ? (
                       <img 
-                        src={product.imageUrl} 
+                        src={getSafeProductImage(product.imageUrl, null, product)} 
                         alt={product.name} 
-                        className="w-12 h-12 rounded-full object-cover border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
-                        onClick={() => setLightboxImg(product.imageUrl)} 
+                        onError={(e) => handleImageError(e, null, product)}
+                        className="w-12 h-12 rounded-full object-contain p-1 bg-slate-50 border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" 
+                        onClick={() => setLightboxImg(getSafeProductImage(product.imageUrl, null, product))} 
                       />
                     ) : (
                       <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
