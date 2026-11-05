@@ -1,7 +1,7 @@
 {
   "version": 2,
   "outputDirectory": "dist",
-  "framework": null,
+  "installCommand": "npm install --legacy-peer-deps --force",
   "rewrites": [
     {
       "source": "/api/(.*)",
