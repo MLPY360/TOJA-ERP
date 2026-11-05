@@ -372,11 +372,11 @@ export const simulateBatchReinvestment = ({
   historicalDailyVelocity = 8,
   returnRate = 0.12
 }) => {
-  const units = Math.max(10, safeNum(plannedUnits, 500));
-  const cost = Math.max(1, safeNum(unitCost, 180));
-  const price = Math.max(cost, safeNum(retailPrice, 450));
-  const ads = Math.max(0, safeNum(marketingBudget, 15000));
-  const velocity = Math.max(0.5, safeNum(historicalDailyVelocity, 8));
+  const units = Math.max(1, safeNum(plannedUnits, 1));
+  const cost = Math.max(0, safeNum(unitCost, 0));
+  const price = Math.max(0.01, safeNum(retailPrice, 1));
+  const ads = Math.max(0, safeNum(marketingBudget, 0));
+  const velocity = Math.max(0.1, safeNum(historicalDailyVelocity, 1));
   const retRate = Math.min(0.5, Math.max(0, safeNum(returnRate, 0.12)));
 
   // 1. Total Capital Required
@@ -384,10 +384,10 @@ export const simulateBatchReinvestment = ({
   const totalCapitalRequired = manufacturingCost + ads;
 
   // 2. Break-Even Volume
-  const breakEvenUnits = Math.ceil(totalCapitalRequired / price);
+  const breakEvenUnits = price > 0 ? Math.ceil(totalCapitalRequired / price) : 0;
   const breakEvenPct = units > 0 ? Number(((breakEvenUnits / units) * 100).toFixed(1)) : 0;
-  const daysToBreakEven = Math.ceil(breakEvenUnits / velocity);
-  const daysToFullSellOut = Math.ceil(units / velocity);
+  const daysToBreakEven = velocity > 0 ? Math.ceil(breakEvenUnits / velocity) : 0;
+  const daysToFullSellOut = velocity > 0 ? Math.ceil(units / velocity) : 0;
 
   // 3. Sell-Through Profit Scenarios (70%, 85%, 100%)
   const tiers = [70, 85, 100];

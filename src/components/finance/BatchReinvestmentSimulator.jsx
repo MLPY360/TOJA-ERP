@@ -1,8 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
 import {
-  Sliders, Target, TrendingUp, DollarSign, Clock,
-  Sparkles, CheckCircle2, ArrowRight, RotateCcw, AlertCircle
+  Sliders, Target, TrendingUp, DollarSign, Clock, RotateCcw
 } from 'lucide-react';
 import { simulateBatchReinvestment } from '../../utils/financialIntelligence';
 import { translations } from '../../translations';
@@ -11,23 +9,47 @@ export default function BatchReinvestmentSimulator({
   defaultVelocity = 8,
   language = 'ar'
 }) {
-  const t = translations[language];
+  const t = translations[language] || {};
   const isAr = language === 'ar';
 
-  // Interactive Simulator State
+  // Interactive Simulator State - initialized with sensible defaults
   const [plannedUnits, setPlannedUnits] = useState(500);
   const [unitCost, setUnitCost] = useState(185);
   const [retailPrice, setRetailPrice] = useState(450);
   const [marketingBudget, setMarketingBudget] = useState(15000);
   const [dailyVelocity, setDailyVelocity] = useState(defaultVelocity || 8);
 
+  // Dynamic slider upper bounds (automatically expands if user types a higher number)
+  const unitsMax = Math.max(3000, Number(plannedUnits) || 0);
+  const costMax = Math.max(1000, Number(unitCost) || 0);
+  const priceMax = Math.max(2500, Number(retailPrice) || 0);
+  const adsMax = Math.max(80000, Number(marketingBudget) || 0);
+
+  // Free-form input handler allowing instant updates without clamping while typing
+  const handleInputChange = (setter, rawVal, min = 0) => {
+    if (rawVal === '') {
+      setter('');
+      return;
+    }
+    const parsed = parseFloat(rawVal);
+    if (!isNaN(parsed)) {
+      setter(Math.max(min, parsed));
+    }
+  };
+
+  const handleBlur = (setter, currentVal, fallback = 0) => {
+    if (currentVal === '' || isNaN(currentVal)) {
+      setter(fallback);
+    }
+  };
+
   const simulation = useMemo(() => {
     return simulateBatchReinvestment({
-      plannedUnits,
-      unitCost,
-      retailPrice,
-      marketingBudget,
-      historicalDailyVelocity: dailyVelocity,
+      plannedUnits: plannedUnits === '' ? 0 : Number(plannedUnits),
+      unitCost: unitCost === '' ? 0 : Number(unitCost),
+      retailPrice: retailPrice === '' ? 0 : Number(retailPrice),
+      marketingBudget: marketingBudget === '' ? 0 : Number(marketingBudget),
+      historicalDailyVelocity: dailyVelocity === '' ? 0 : Number(dailyVelocity),
       returnRate: 0.12
     });
   }, [plannedUnits, unitCost, retailPrice, marketingBudget, dailyVelocity]);
@@ -70,106 +92,150 @@ export default function BatchReinvestmentSimulator({
       {/* Simulator Inputs & Quick Sliders Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 p-5 bg-slate-50/80 rounded-2xl border border-slate-200/80">
         {/* Input 1: Planned Units */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-600">
+        <div className="flex flex-col gap-2.5 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-bold text-slate-700 truncate">
               {t.plannedBatchUnits || 'Planned Batch Units'}
             </label>
-            <span className="text-xs font-black text-[#181E1C] bg-white px-2 py-0.5 rounded border border-slate-200">
-              {plannedUnits} {isAr ? 'قطعة' : 'units'}
-            </span>
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 focus-within:border-[#597867] focus-within:ring-2 focus-within:ring-[#597867]/20 rounded-lg px-2 py-0.5 transition-all">
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={plannedUnits}
+                onChange={(e) => handleInputChange(setPlannedUnits, e.target.value, 1)}
+                onBlur={() => handleBlur(setPlannedUnits, plannedUnits, 1)}
+                className="w-16 text-xs font-black text-[#181E1C] bg-transparent outline-none text-end [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <span className="text-[10px] font-bold text-slate-400 select-none">
+                {isAr ? 'قطعة' : 'units'}
+              </span>
+            </div>
           </div>
           <input
             type="range"
-            min="50"
-            max="3000"
-            step="50"
-            value={plannedUnits}
+            min="1"
+            max={unitsMax}
+            step="1"
+            value={Number(plannedUnits) || 0}
             onChange={(e) => setPlannedUnits(Number(e.target.value))}
             className="w-full accent-[#597867] cursor-pointer"
           />
           <div className="flex justify-between text-[10px] text-slate-400 font-bold">
-            <span>50</span>
-            <span>1,500</span>
-            <span>3,000</span>
+            <span>1</span>
+            <span>{Math.round(unitsMax / 2).toLocaleString()}</span>
+            <span>{unitsMax.toLocaleString()}</span>
           </div>
         </div>
 
         {/* Input 2: Unit Cost Price */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-600">
+        <div className="flex flex-col gap-2.5 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-bold text-slate-700 truncate">
               {t.unitManufacturingCost || 'Unit Cost (EGP)'}
             </label>
-            <span className="text-xs font-black text-[#181E1C] bg-white px-2 py-0.5 rounded border border-slate-200">
-              {unitCost} EGP
-            </span>
-          </div>
-          <input
-            type="range"
-            min="50"
-            max="800"
-            step="5"
-            value={unitCost}
-            onChange={(e) => setUnitCost(Number(e.target.value))}
-            className="w-full accent-[#597867] cursor-pointer"
-          />
-          <div className="flex justify-between text-[10px] text-slate-400 font-bold">
-            <span>50 EGP</span>
-            <span>400 EGP</span>
-            <span>800 EGP</span>
-          </div>
-        </div>
-
-        {/* Input 3: Target Retail Price */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-600">
-              {t.targetRetailPrice || 'Target Retail Price (EGP)'}
-            </label>
-            <span className="text-xs font-black text-[#181E1C] bg-white px-2 py-0.5 rounded border border-slate-200">
-              {retailPrice} EGP
-            </span>
-          </div>
-          <input
-            type="range"
-            min="100"
-            max="1500"
-            step="10"
-            value={retailPrice}
-            onChange={(e) => setRetailPrice(Number(e.target.value))}
-            className="w-full accent-[#597867] cursor-pointer"
-          />
-          <div className="flex justify-between text-[10px] text-slate-400 font-bold">
-            <span>100 EGP</span>
-            <span>750 EGP</span>
-            <span>1,500 EGP</span>
-          </div>
-        </div>
-
-        {/* Input 4: Marketing/Ad Budget */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-600">
-              {t.marketingAdBudget || 'Marketing Budget (EGP)'}
-            </label>
-            <span className="text-xs font-black text-[#181E1C] bg-white px-2 py-0.5 rounded border border-slate-200">
-              {marketingBudget.toLocaleString('en-EG')} EGP
-            </span>
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 focus-within:border-[#597867] focus-within:ring-2 focus-within:ring-[#597867]/20 rounded-lg px-2 py-0.5 transition-all">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={unitCost}
+                onChange={(e) => handleInputChange(setUnitCost, e.target.value, 0)}
+                onBlur={() => handleBlur(setUnitCost, unitCost, 0)}
+                className="w-16 text-xs font-black text-[#181E1C] bg-transparent outline-none text-end [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <span className="text-[10px] font-bold text-slate-400 select-none">
+                EGP
+              </span>
+            </div>
           </div>
           <input
             type="range"
             min="0"
-            max="80000"
-            step="2500"
-            value={marketingBudget}
+            max={costMax}
+            step="1"
+            value={Number(unitCost) || 0}
+            onChange={(e) => setUnitCost(Number(e.target.value))}
+            className="w-full accent-[#597867] cursor-pointer"
+          />
+          <div className="flex justify-between text-[10px] text-slate-400 font-bold">
+            <span>0</span>
+            <span>{Math.round(costMax / 2).toLocaleString()}</span>
+            <span>{costMax.toLocaleString()}</span>
+          </div>
+        </div>
+
+        {/* Input 3: Target Retail Price */}
+        <div className="flex flex-col gap-2.5 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-bold text-slate-700 truncate">
+              {t.targetRetailPrice || 'Target Retail Price (EGP)'}
+            </label>
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 focus-within:border-[#597867] focus-within:ring-2 focus-within:ring-[#597867]/20 rounded-lg px-2 py-0.5 transition-all">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={retailPrice}
+                onChange={(e) => handleInputChange(setRetailPrice, e.target.value, 0)}
+                onBlur={() => handleBlur(setRetailPrice, retailPrice, 0)}
+                className="w-16 text-xs font-black text-[#181E1C] bg-transparent outline-none text-end [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <span className="text-[10px] font-bold text-slate-400 select-none">
+                EGP
+              </span>
+            </div>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max={priceMax}
+            step="1"
+            value={Number(retailPrice) || 0}
+            onChange={(e) => setRetailPrice(Number(e.target.value))}
+            className="w-full accent-[#597867] cursor-pointer"
+          />
+          <div className="flex justify-between text-[10px] text-slate-400 font-bold">
+            <span>0</span>
+            <span>{Math.round(priceMax / 2).toLocaleString()}</span>
+            <span>{priceMax.toLocaleString()}</span>
+          </div>
+        </div>
+
+        {/* Input 4: Marketing/Ad Budget */}
+        <div className="flex flex-col gap-2.5 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-bold text-slate-700 truncate">
+              {t.marketingAdBudget || 'Marketing Budget (EGP)'}
+            </label>
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 focus-within:border-[#597867] focus-within:ring-2 focus-within:ring-[#597867]/20 rounded-lg px-2 py-0.5 transition-all">
+              <input
+                type="number"
+                min="0"
+                step="250"
+                value={marketingBudget}
+                onChange={(e) => handleInputChange(setMarketingBudget, e.target.value, 0)}
+                onBlur={() => handleBlur(setMarketingBudget, marketingBudget, 0)}
+                className="w-20 text-xs font-black text-[#181E1C] bg-transparent outline-none text-end [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <span className="text-[10px] font-bold text-slate-400 select-none">
+                EGP
+              </span>
+            </div>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max={adsMax}
+            step="250"
+            value={Number(marketingBudget) || 0}
             onChange={(e) => setMarketingBudget(Number(e.target.value))}
             className="w-full accent-[#597867] cursor-pointer"
           />
           <div className="flex justify-between text-[10px] text-slate-400 font-bold">
-            <span>0 EGP</span>
-            <span>40k EGP</span>
-            <span>80k EGP</span>
+            <span>0</span>
+            <span>{Math.round(adsMax / 2).toLocaleString()}</span>
+            <span>{adsMax.toLocaleString()}</span>
           </div>
         </div>
       </div>
