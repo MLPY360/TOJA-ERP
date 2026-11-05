@@ -4,9 +4,10 @@ const NVIDIA_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
 export const CANDIDATE_MODELS = [
   'meta/llama-3.3-70b-instruct',
-  'meta/llama-3.1-70b-instruct',
-  'nvidia/llama-3.1-nemotron-70b-instruct',
-  'mistralai/mixtral-8x22b-instruct-v0.1'
+  'nvidia/nemotron-3.5-bolt-e4b',
+  'google/diffusiongemma-26b-a4b-it',
+  'poolside/laguna-xs-2.1',
+  'meta/llama-3.1-70b-instruct'
 ];
 
 const getNvidiaApiKey = () =>
@@ -70,22 +71,36 @@ export const callNvidiaChat = async (messages, options = {}) => {
         })
       });
 
-      const proxyRes = await withTimeout(serverlessPromise, Math.min(timeoutMs, 10000), 'serverless-proxy').catch(() => null);
-      if (proxyRes && proxyRes.ok) {
-        const data = await proxyRes.json();
-        const content = data.choices?.[0]?.message?.content;
-        if (content) {
-          return content;
+      const proxyRes = await withTimeout(serverlessPromise, Math.min(timeoutMs, 25000), 'serverless-proxy').catch((err) => {
+        console.warn('[aiService] Serverless proxy timeout or connection error:', err?.message || err);
+        return null;
+      });
+
+      if (proxyRes) {
+        if (proxyRes.ok) {
+          const data = await proxyRes.json();
+          const content = data.choices?.[0]?.message?.content;
+          if (content) {
+            return content;
+          }
+        } else {
+          const errJson = await proxyRes.json().catch(() => ({}));
+          console.error(`[aiService] Serverless /api/ai-chat returned HTTP ${proxyRes.status}:`, errJson);
         }
       }
-    } catch {
-      // Fall through to direct NVIDIA NIM endpoint
+    } catch (err) {
+      console.warn('[aiService] Exception during serverless proxy attempt:', err?.message || err);
     }
   }
 
-  // 2. Direct NVIDIA NIM API call with candidate models
+  // 2. Direct NVIDIA NIM API call with candidate models (fallback if running locally with client key)
   if (!apiKey) {
-    throw new Error("مفتاح VITE_NVIDIA_API_KEY غير موجود في ملف .env");
+    console.warn("[aiService] Client has no VITE_NVIDIA_API_KEY and serverless proxy did not return content.");
+    const friendlyError = "⚠️ تعذر الاتصال بموديلات الذكاء الاصطناعي (NVIDIA NIM) حالياً، يرجى المحاولة بعد لحظات.";
+    if (jsonMode) {
+      throw new Error(friendlyError);
+    }
+    return friendlyError;
   }
 
   let lastError = null;
