@@ -1,17 +1,23 @@
 import { GoogleGenAI } from '@google/genai';
 
-const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+const NVIDIA_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
 export const CANDIDATE_MODELS = [
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
-  'openai/gpt-oss-120b',
-  'openai/gpt-oss-20b',
-  'qwen/qwen3.8-27b'
+  'meta/llama-3.3-70b-instruct',
+  'meta/llama-3.1-70b-instruct',
+  'nvidia/llama-3.1-nemotron-70b-instruct',
+  'mistralai/mixtral-8x22b-instruct-v0.1'
 ];
 
-const getGroqApiKey = () => (typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_GROQ_API_KEY : (typeof process !== 'undefined' ? process.env?.VITE_GROQ_API_KEY : ''));
-const getGeminiApiKey = () => (typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_GEMINI_API_KEY : (typeof process !== 'undefined' ? process.env?.VITE_GEMINI_API_KEY : ''));
+const getNvidiaApiKey = () =>
+  (typeof import.meta !== 'undefined' && import.meta.env
+    ? import.meta.env.VITE_NVIDIA_API_KEY
+    : (typeof process !== 'undefined' ? process.env?.VITE_NVIDIA_API_KEY || process.env?.NVIDIA_API_KEY : '')) || '';
+
+const getGeminiApiKey = () =>
+  (typeof import.meta !== 'undefined' && import.meta.env
+    ? import.meta.env.VITE_GEMINI_API_KEY
+    : (typeof process !== 'undefined' ? process.env?.VITE_GEMINI_API_KEY : '')) || '';
 
 /**
  * Timeout helper ensuring requests fail fast rather than hanging indefinitely
@@ -36,19 +42,51 @@ const cleanJsonString = (raw) => {
 };
 
 /**
- * Core Groq API caller with multi-model fallback.
- * Uses OpenAI-compatible chat completions endpoint: https://api.groq.com/openai/v1/chat/completions
+ * Core NVIDIA NIM API caller with multi-model fallback and Vercel serverless proxy support.
+ * Primary Endpoint: https://integrate.api.nvidia.com/v1/chat/completions
+ * Serverless CORS Proxy: /api/ai-chat
  */
-export const callGroqChat = async (messages, options = {}) => {
-  const apiKey = options.apiKey || getGroqApiKey();
-  if (!apiKey) {
-    throw new Error("مفتاح VITE_GROQ_API_KEY غير موجود في ملف .env");
-  }
-
+export const callNvidiaChat = async (messages, options = {}) => {
+  const apiKey = options.apiKey || getNvidiaApiKey();
   const modelsToTry = options.models || CANDIDATE_MODELS;
   const temperature = options.temperature ?? 0.5;
   const jsonMode = Boolean(options.jsonMode);
   const timeoutMs = options.timeoutMs || 25000;
+
+  // 1. First Attempt: Vercel serverless function at /api/ai-chat to completely prevent browser CORS issues
+  if (typeof window !== 'undefined' && typeof fetch !== 'undefined') {
+    try {
+      const serverlessPromise = fetch('/api/ai-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
+        },
+        body: JSON.stringify({
+          model: modelsToTry[0],
+          messages,
+          temperature,
+          response_format: jsonMode ? { type: 'json_object' } : undefined
+        })
+      });
+
+      const proxyRes = await withTimeout(serverlessPromise, Math.min(timeoutMs, 10000), 'serverless-proxy').catch(() => null);
+      if (proxyRes && proxyRes.ok) {
+        const data = await proxyRes.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) {
+          return content;
+        }
+      }
+    } catch {
+      // Fall through to direct NVIDIA NIM endpoint
+    }
+  }
+
+  // 2. Direct NVIDIA NIM API call with candidate models
+  if (!apiKey) {
+    throw new Error("مفتاح VITE_NVIDIA_API_KEY غير موجود في ملف .env");
+  }
 
   let lastError = null;
 
@@ -57,14 +95,15 @@ export const callGroqChat = async (messages, options = {}) => {
       const requestBody = {
         model,
         messages,
-        temperature
+        temperature,
+        max_tokens: options.maxTokens || 1024
       };
 
       if (jsonMode) {
         requestBody.response_format = { type: 'json_object' };
       }
 
-      const fetchPromise = fetch(GROQ_ENDPOINT, {
+      const fetchPromise = fetch(NVIDIA_ENDPOINT, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -78,7 +117,7 @@ export const callGroqChat = async (messages, options = {}) => {
       // Handle transient rate limits or missing model access by falling through to next candidate
       if (response.status === 404 || response.status === 429 || response.status === 503) {
         const errJson = await response.json().catch(() => ({}));
-        console.warn(`[Groq AI] Model "${model}" HTTP ${response.status}:`, errJson?.error?.message || response.statusText);
+        console.warn(`[NVIDIA NIM AI] Model "${model}" HTTP ${response.status}:`, errJson?.error?.message || response.statusText);
         continue;
       }
 
@@ -94,12 +133,12 @@ export const callGroqChat = async (messages, options = {}) => {
       }
     } catch (err) {
       lastError = err;
-      console.warn(`[Groq AI] Request to model "${model}" failed:`, err?.message || err);
+      console.warn(`[NVIDIA NIM AI] Request to model "${model}" failed:`, err?.message || err);
       continue;
     }
   }
 
-  const friendlyError = "⚠️ تعذر الاتصال بموديلات الذكاء الاصطناعي (Groq) حالياً، يرجى المحاولة بعد لحظات.";
+  const friendlyError = "⚠️ تعذر الاتصال بموديلات الذكاء الاصطناعي (NVIDIA NIM) حالياً، يرجى المحاولة بعد لحظات.";
   if (jsonMode) {
     throw new Error(lastError?.message || friendlyError);
   }
@@ -107,13 +146,17 @@ export const callGroqChat = async (messages, options = {}) => {
   return friendlyError;
 };
 
+// Backwards compatibility alias for components importing callGroqChat
+export const callGroqChat = callNvidiaChat;
+
 /**
  * AI CFO Executive Chat Advisor for TOJA Partners
  */
 export const askFinancialAdvisorChat = async (conversationHistory, userQuestion, systemContext = {}) => {
-  const apiKey = getGroqApiKey();
-  if (!apiKey) {
-    throw new Error("مفتاح VITE_GROQ_API_KEY غير موجود في ملف .env");
+  const apiKey = getNvidiaApiKey();
+  if (!apiKey && typeof window !== 'undefined' && !window.location.origin.includes('vercel.app')) {
+    // If running outside Vercel without client key, warn immediately
+    console.warn("VITE_NVIDIA_API_KEY is not defined in local environment; attempting serverless route if configured.");
   }
 
   const systemPrompt = `
@@ -155,7 +198,7 @@ export const askFinancialAdvisorChat = async (conversationHistory, userQuestion,
     chatMessages.push({ role: 'user', content: userQuestion });
   }
 
-  return await callGroqChat(chatMessages, {
+  return await callNvidiaChat(chatMessages, {
     temperature: 0.5,
     apiKey
   });
@@ -191,7 +234,7 @@ export const parseOrderFromText = async (rawText, availableProducts = []) => {
   }
   `;
 
-  const responseText = await callGroqChat([
+  const responseText = await callNvidiaChat([
     { role: 'system', content: 'You are an order parser that strictly returns a JSON object.' },
     { role: 'user', content: prompt }
   ], { jsonMode: true, temperature: 0.1 });
@@ -216,7 +259,7 @@ export const getFinancialAdvisory = async (financialMetrics, inventoryMetrics, r
   3. 🚀 خطة التحرك للدفعة القادمة لتعظيم الأرباح وتفادي هدر الكاش.
   `;
 
-  return await callGroqChat([
+  return await callNvidiaChat([
     { role: 'system', content: 'أنت مستشار مالي استراتيجي لشركاء براند ملابس مصري.' },
     { role: 'user', content: prompt }
   ], { temperature: 0.5 });
@@ -233,7 +276,7 @@ export const generateSmartWhatsApp = async (customerName, orderData, intent = 'c
   Keep it engaging, warm, professional, with brand identity. Include emojis.
   `;
 
-  return await callGroqChat([
+  return await callNvidiaChat([
     { role: 'system', content: 'أنت مسؤول خدمة العملاء لبراند الملابس المصري TOJA.' },
     { role: 'user', content: prompt }
   ], { temperature: 0.6 });
@@ -401,7 +444,7 @@ export const generateDailyPartnerTasks = async (systemContext = {}) => {
   }
   `;
 
-  const responseText = await callGroqChat([
+  const responseText = await callNvidiaChat([
     { role: 'system', content: 'You are the Operations & Executive AI Director for Egyptian apparel brand TOJA. Always return strictly valid JSON matching the requested schema.' },
     { role: 'user', content: prompt }
   ], { jsonMode: true, temperature: 0.3 });

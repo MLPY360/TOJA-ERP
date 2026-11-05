@@ -2231,7 +2231,7 @@ export default function FinanceView() {
                     <h3 className="text-base sm:text-lg font-black tracking-wide flex items-center gap-2 text-white">
                       <span>{t.aiCfoAdvisorTitle || 'المستشار المالي التفاعلي للشركاء'}</span>
                       <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                        Interactive AI CFO
+                        Interactive AI CFO • NVIDIA NIM
                       </span>
                     </h3>
                     <p className="text-xs text-slate-300 font-medium hidden sm:block mt-0.5">

@@ -277,7 +277,7 @@ export default function TasksView() {
         lowStockItems: lowStockList.slice(0, 6)
       };
 
-      // Call Groq AI (Llama 3.3 70B) to generate 4 customized operational tasks
+      // Call NVIDIA NIM AI (Llama 3.1 70B) to generate 4 customized operational tasks
       const generatedTasks = await generateDailyPartnerTasks(liveContext);
 
       if (!Array.isArray(generatedTasks) || generatedTasks.length === 0) {
@@ -468,7 +468,7 @@ export default function TasksView() {
             </div>
             <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
               <Sparkles size={12} className="text-amber-300" />
-              Groq Llama 3.3 70B
+              NVIDIA NIM Llama 3.3 70B
             </span>
           </div>
 

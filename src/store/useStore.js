@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, getDoc, setDoc, serverTimestamp, where, getDocs } from 'firebase/firestore'
 import { db, auth } from '../firebase'
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth'
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth'
 import { logger } from '../utils/logger'
 import { SUPER_ADMIN_EMAILS, isSuperAdmin, isPartnerStaff, isAuthorizedStaff, PARTNER_STAFF_EMAILS } from '../utils/authConfig'
 import { translations } from '../translations'
@@ -581,17 +581,6 @@ export const useStore = create((set, get) => ({
       get().logActivity('Logged into the system');
       return { success: true };
     } catch (error) {
-      // If user not found or invalid credential, auto-create account for whitelisted partners for seamless testing
-      if ((error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') && isPartnerStaff(email)) {
-        try {
-          const userCred = await createUserWithEmailAndPassword(auth, email, password);
-          logger.info('AUTH_PARTNER_AUTO_REGISTER', 'auth', { email, uid: userCred.user?.uid }, `Auto-created partner account for ${email}`);
-          get().logActivity('Partner auto-registered & logged into system');
-          return { success: true };
-        } catch (regErr) {
-          console.warn("Partner auto-register fallback:", regErr.message);
-        }
-      }
       console.error("Login failed:", error);
       logger.error('AUTH_LOGIN_FAILED', 'auth', error, { email }, `Login failed for ${email}: ${error.code}`);
       return { success: false, error: error.code };

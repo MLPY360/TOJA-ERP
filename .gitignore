@@ -38,3 +38,5 @@ dist-ssr
 # Firebase build & debug artifacts
 .firebase/
 .firebaserc.local
+
+.vercel
