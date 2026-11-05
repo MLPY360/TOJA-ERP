@@ -5,10 +5,13 @@
  */
 
 const NVIDIA_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const DEFAULT_MODEL = 'meta/llama-3.3-70b-instruct';
+
 const FALLBACK_MODELS = [
   'meta/llama-3.3-70b-instruct',
   'meta/llama-3.1-70b-instruct',
-  'nvidia/llama-3.1-nemotron-70b-instruct'
+  'nvidia/llama-3.1-nemotron-70b-instruct',
+  'mistralai/mistral-large-2-instruct'
 ];
 
 export default async function handler(req, res) {
@@ -30,9 +33,13 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  // 1. Check process.env.VITE_NVIDIA_API_KEY || process.env.NVIDIA_API_KEY
   const apiKey =
     process.env.VITE_NVIDIA_API_KEY ||
-    process.env.NVIDIA_API_KEY;
+    process.env.NVIDIA_API_KEY ||
+    (typeof req.headers?.authorization === 'string' && req.headers.authorization.startsWith('Bearer ')
+      ? req.headers.authorization.replace(/^Bearer\s+/i, '').trim()
+      : '');
 
   if (!apiKey) {
     return res.status(500).json({
@@ -41,19 +48,33 @@ export default async function handler(req, res) {
   }
 
   try {
+    let body = req.body;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        body = {};
+      }
+    }
+
     const {
       messages,
       model,
       temperature = 0.5,
       max_tokens = 1024,
       response_format
-    } = req.body || {};
+    } = body || {};
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: 'Messages array is required' });
     }
 
-    const modelsToTry = model ? [model, ...FALLBACK_MODELS.filter(m => m !== model)] : FALLBACK_MODELS;
+    // 2. Explicitly target https://integrate.api.nvidia.com/v1/chat/completions with meta/llama-3.3-70b-instruct
+    const primaryModel = (typeof model === 'string' && model.trim() && (model.startsWith('meta/') || model.startsWith('nvidia/') || model.startsWith('mistralai/')))
+      ? model.trim()
+      : DEFAULT_MODEL;
+
+    const modelsToTry = [primaryModel, ...FALLBACK_MODELS.filter(m => m !== primaryModel)];
     let lastError = null;
 
     for (const currentModel of modelsToTry) {
@@ -61,8 +82,9 @@ export default async function handler(req, res) {
         const payload = {
           model: currentModel,
           messages,
-          temperature,
-          max_tokens
+          temperature: typeof temperature === 'number' ? temperature : 0.5,
+          max_tokens: typeof max_tokens === 'number' ? max_tokens : 1024,
+          stream: false
         };
 
         if (response_format) {
@@ -73,7 +95,8 @@ export default async function handler(req, res) {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
           },
           body: JSON.stringify(payload)
         });
@@ -84,15 +107,18 @@ export default async function handler(req, res) {
           return res.status(200).json(data);
         }
 
-        // If rate limited or model not found, try fallback
-        if (nvidiaRes.status === 404 || nvidiaRes.status === 429 || nvidiaRes.status === 503) {
-          console.warn(`[NVIDIA Serverless] Model "${currentModel}" failed with status ${nvidiaRes.status}, trying fallback.`);
-          lastError = data;
+        console.warn(`[NVIDIA Serverless] Model "${currentModel}" failed with status ${nvidiaRes.status}:`, data);
+        lastError = data;
+
+        // Try next candidate model if current one is not found, deprecated/gone, or rate limited
+        if (nvidiaRes.status === 404 || nvidiaRes.status === 410 || nvidiaRes.status === 429 || nvidiaRes.status === 503) {
           continue;
         }
 
-        // Return error if bad request (400) or other error
-        return res.status(nvidiaRes.status).json(data);
+        // Return early on 400 bad request if it's the first model attempt
+        if (nvidiaRes.status === 400 && modelsToTry.indexOf(currentModel) === 0) {
+          return res.status(400).json(data);
+        }
       } catch (err) {
         lastError = err;
         console.warn(`[NVIDIA Serverless] Request failed for model "${currentModel}":`, err.message);
